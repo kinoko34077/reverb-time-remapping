@@ -1,0 +1,32 @@
+{
+  "features": [
+    {
+      "dry_run_caller": ".github/workflows/verified-artifacts-rollout.yml",
+      "effectful_write": {
+        "dry_run_enabled_by_bootstrap": true,
+        "enabled_by_bootstrap": false,
+        "human_gate_required": true,
+        "required_job_permissions": [
+          "contents:write",
+          "actions:read",
+          "pull-requests:read"
+        ]
+      },
+      "entrypoint": ".github/workflows/kinotch-repo-command.yml",
+      "id": "generated-artifact-writeback",
+      "no_output": {
+        "reason": "NO_GENERATED_OUTPUT",
+        "status": "NOT_APPLICABLE"
+      },
+      "recipe_registry": "tools.generated_artifact_rollout.select_fixed_recipe",
+      "status": "INSTALLED",
+      "writer": "tools.generated_artifact_writer.verified_writeback"
+    }
+  ],
+  "repository": "kinoko34077/reverb-time-remapping",
+  "schema": "devflow-standard-features.v1",
+  "standard_features": [
+    "generated-artifact-writeback",
+    "repo_native_dispatch"
+  ]
+}

@@ -424,6 +424,9 @@
     // irGainA/B はスライス差し替えのクロスフェード専用、irWetGain は Mix/ソロ専用。
     // 役割を分けることで、Mix 変更がスライス差し替えなしに即反映される。
     const irConvA = ctx.createConvolver(), irConvB = ctx.createConvolver();
+    // 個別窓の自動正規化は残響の自然な減衰を消す。全IRの共通係数を使用する。
+    irConvA.normalize = false; irConvB.normalize = false;
+    let irFullScale = 1;
     const irGainA = ctx.createGain(), irGainB = ctx.createGain();
     const irWetGain = ctx.createGain(); irWetGain.gain.value = 0;
     irGainA.gain.value = 0; irGainB.gain.value = 0;
@@ -559,6 +562,17 @@
     /* ================================================================
        IR 生成 (生成ノイズ減衰 + 初期反射タップ / ファイル差し替え可)
        ================================================================ */
+    function fullIRScale(buf) {
+      // Web Audio ConvolverNodeの全IR正規化と同じRMS基準・サンプルレート補正。
+      let sum = 0;
+      for (let c = 0; c < buf.numberOfChannels; c++) {
+        const a = buf.getChannelData(c);
+        for (let i = 0; i < a.length; i++) sum += a[i] * a[i];
+      }
+      const rms = Math.sqrt(sum / (buf.length * buf.numberOfChannels));
+      const safeRms = Number.isFinite(rms) ? Math.max(rms, 0.000125) : 0.000125;
+      return 0.00125 * (44100 / buf.sampleRate) / safeRms * (buf.numberOfChannels === 4 ? 0.5 : 1);
+    }
     function genIR() {
       const type = $('#irType').value;
       if (type === 'custom' && S.irCustomBuf) { S.irBuf = S.irCustomBuf; }
@@ -590,6 +604,7 @@
         S.irBuf = b;
       }
       S.irDur = S.irBuf.duration;
+      irFullScale = fullIRScale(S.irBuf);
       normalConv.buffer = S.irBuf;
       irLastSliceKey = '';
       $('#irInfo').textContent = '長さ ' + S.irDur.toFixed(2) + ' s / ' +
@@ -821,7 +836,7 @@
       src.start(when, offset, GRAIN + 0.02);
     }
     function grainLoop() {
-      if (S.mode !== 'buffer') return;
+      if (S.mode !== 'buffer' || ctx.state !== 'running') return;
       while (nextGrainTime < ctx.currentTime + 0.14) {
         if (nextGrainTime < ctx.currentTime - 0.05) nextGrainTime = ctx.currentTime + 0.02;
         scheduleGrain(nextGrainTime);
@@ -898,7 +913,7 @@
       return out;
     }
     function specLoop() {
-      if (S.mode !== 'spectral') return;
+      if (S.mode !== 'spectral' || ctx.state !== 'running') return;
       while (nextSpecTime < ctx.currentTime + 0.65) {
         if (nextSpecTime < ctx.currentTime - 0.05) nextSpecTime = ctx.currentTime + 0.02;
         const src = ctx.createBufferSource(); src.buffer = renderSpecChunk();
@@ -955,7 +970,7 @@
       const t = ctx.currentTime;
       // ここでの目標はスライス自体のレベル (音量補正の norm) のみ。
       // Mix/ソロは後段の irWetGain が担うため、Freeze 中でも Mix 変更が即反映される。
-      const target = (S.mode === 'ir') ? norm : 0;
+      const target = (S.mode === 'ir') ? norm * irFullScale : 0;
       inactGain.gain.cancelScheduledValues(t);
       inactGain.gain.setTargetAtTime(target, t, 0.045);
       actGain.gain.setTargetAtTime(0, t, 0.045);
@@ -1040,16 +1055,16 @@
       }
       S.revTime = clamp(S.revTime, 0, Math.max(hi, 0));
     }
-    let lastTickAt = 0;
+    let lastTickAt = null;
     setInterval(() => {
       // dt は固定 0.025 ではなく AudioContext 時計の実経過から取る。
       // 固定値だとバックグラウンドで setInterval が絞られた分だけ時計が遅れ、
       // ctx.currentTime 基準の Source Time とドリフトする。
       const now = ctx.currentTime;
-      const dt = lastTickAt > 0 ? Math.max(0, now - lastTickAt) : 0.025;
-      lastTickAt = now;
-      // Spectral はチャンク生成側で時間を進めるため二重に進めない
-      if (S.mode !== 'spectral') advanceRevTime(dt);
+      const dt = ctx.state === 'running' && lastTickAt !== null ? Math.max(0, now - lastTickAt) : 0;
+      lastTickAt = ctx.state === 'running' ? now : null;
+      // 未初期化・停止中の時計を進めない。Spectral はチャンク生成側で進める。
+      if (S.mode !== 'spectral' && dt > 0 && revAxisMax() > 0) advanceRevTime(dt);
       updateRevUI();
       if (S.mode === 'ir') updateIRSlice(false);
     }, 25);
@@ -1134,7 +1149,7 @@
     // Mix の正本: Dry = 1 − m、Wet = m の線形。端点では相手側が完全に 0 になる
     // (以前は Dry に 1 − 0.7m の勝手なカーブがあり Wet 100% でも Dry が 0.3 残っていた)。
     // ソロはその上位のゲートとして働く。
-    function dryLevel() { return S.solo === 'wet' ? 0 : 1 - mixVal(); }
+    function dryLevel() { return S.solo === 'wet' ? 0 : S.mode === 'dry' ? 1 : 1 - mixVal(); }
     function wetLevel() { return S.solo === 'dry' ? 0 : mixVal(); }
     function applyMix() {
       // Mix/ソロのゲイン設定はここが単一の正本 (モード側で個別に触らない)。

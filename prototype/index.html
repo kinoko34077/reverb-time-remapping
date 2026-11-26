@@ -1,0 +1,1476 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="data:," />
+    <title>Reverb Time Scrubber</title>
+    <style>
+      button, [role="button"], select, summary, input:not([type="checkbox"], [type="radio"]) { min-height: 2.25rem; }
+      * { box-sizing: border-box; }
+      :root {
+        --bg: #eef1ee;
+        --panel: #ffffff;
+        --panel2: #f4f7f4;
+        --ink: #1b2320;
+        --ink-dim: #5a6660;
+        --line: #cfd8d2;
+        --accent: #0d7a68;
+        --accent-ink: #ffffff;
+        --accent-soft: #d9efe9;
+        --warn: #b3541e;
+        --wave: #0d7a68;
+        --wave-dim: #9db8b0;
+        --spec-low: #10151a;
+        --marker: #d64533;
+        --win: rgba(214, 69, 51, 0.16);
+        --chip: #e6ece8;
+        color-scheme: light dark;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0e1311;
+          --panel: #161d1a;
+          --panel2: #1b2420;
+          --ink: #e4ebe7;
+          --ink-dim: #93a39a;
+          --line: #2c3833;
+          --accent: #2fbfa5;
+          --accent-ink: #06231d;
+          --accent-soft: #173b34;
+          --warn: #e08a4e;
+          --wave: #2fbfa5;
+          --wave-dim: #41655b;
+          --spec-low: #05080a;
+          --marker: #ff6a55;
+          --win: rgba(255, 106, 85, 0.18);
+          --chip: #232e2a;
+        }
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Noto Sans JP", system-ui, sans-serif;
+        font-size: 15px;
+        line-height: 1.55;
+      }
+      main { max-width: 1180px; margin: 0 auto; padding: 14px 14px 48px; }
+      h1 { font-size: 21px; margin: 2px 0 2px; letter-spacing: 0.02em; }
+      .lead { color: var(--ink-dim); font-size: 13px; margin: 0 0 12px; }
+      section {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 12px 14px 14px;
+        margin: 0 0 12px;
+      }
+      section > h2 {
+        font-size: 13px; margin: 0 0 10px; color: var(--ink-dim);
+        letter-spacing: 0.08em; font-weight: 700;
+        display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+      }
+      section > h2 .badge { letter-spacing: 0; }
+      .badge {
+        font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+        background: var(--chip); color: var(--ink-dim); white-space: nowrap;
+      }
+      .badge.cache { background: #f3e2c7; color: #7a4a12; }
+      .badge.live { background: var(--accent-soft); color: var(--accent); }
+      @media (prefers-color-scheme: dark) {
+        .badge.cache { background: #3d2f16; color: #e5b96a; }
+      }
+      .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+      .row + .row { margin-top: 8px; }
+      button {
+        font: inherit; font-size: 14px; cursor: pointer;
+        border: 1px solid var(--line); background: var(--panel2); color: var(--ink);
+        border-radius: 8px; padding: 6px 12px; min-width: 44px;
+      }
+      button:hover { border-color: var(--accent); }
+      button.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+      button:disabled { opacity: 0.45; cursor: default; }
+      button.big { font-size: 16px; padding: 8px 18px; font-weight: 700; }
+      select {
+        font: inherit; font-size: 14px; border: 1px solid var(--line);
+        background: var(--panel2); color: var(--ink); border-radius: 8px; padding: 6px 8px;
+      }
+      input[type="range"] { accent-color: var(--accent); min-height: 2.25rem; }
+      input[type="file"] { font-size: 13px; max-width: 100%; }
+      label.ctl { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--ink-dim); min-width: 130px; flex: 1 1 130px; }
+      label.ctl output, .val { font-family: ui-monospace, "SF Mono", Menlo, monospace; color: var(--ink); font-size: 13px; }
+      label.ctl input[type="range"] { width: 100%; }
+      .srcgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
+      .srcgrid button { text-align: left; padding: 8px 10px; line-height: 1.3; }
+      .srcgrid button small { display: block; color: var(--ink-dim); font-size: 11px; font-weight: 400; }
+      .srcgrid button.on small { color: inherit; opacity: 0.85; }
+      .modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+      .modes button { text-align: left; padding: 9px 11px; line-height: 1.35; }
+      .modes button b { display: block; font-size: 15px; }
+      .modes button small { display: block; color: var(--ink-dim); font-size: 11.5px; font-weight: 400; margin-top: 2px; }
+      .modes button.on small { color: inherit; opacity: 0.85; }
+      .modes button .badge { margin-top: 5px; display: inline-block; }
+      .note {
+        background: var(--panel2); border: 1px solid var(--line); border-radius: 8px;
+        padding: 9px 12px; font-size: 13px; margin-top: 10px;
+      }
+      .note b { color: var(--accent); }
+      .vizwrap { position: relative; width: 100%; }
+      canvas.viz { display: block; width: 100%; border: 1px solid var(--line); border-radius: 6px; background: var(--panel2); touch-action: none; }
+      canvas#srcWave { height: 64px; }
+      canvas#wetWave, canvas#irWave { height: 84px; }
+      canvas#spec { height: 150px; background: var(--spec-low); }
+      canvas#outSpec { height: 110px; width: 100%; display: block; border: 1px solid var(--line); border-radius: 6px; background: var(--panel2); }
+      .playhead, .revmark {
+        position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px;
+        pointer-events: none; display: none;
+      }
+      .playhead { background: var(--accent); }
+      .playhead::after, .revmark::after { content:""; position:absolute; top:0; left:50%; transform:translate(-50%,0); width:14px; height:14px; border-radius:50%; background:inherit; border:2px solid var(--panel); box-shadow:0 1px 4px rgba(0,0,0,.35); }
+      .revmark::after { background: var(--marker); }
+      .playhead::after { background: var(--accent); }
+      canvas.viz { cursor: ew-resize; }
+      canvas.viz:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+      .loopregion { position:absolute; top:0; bottom:0; background: rgba(13,122,104,.14); border-left:2px solid var(--accent); border-right:2px solid var(--accent); pointer-events:none; display:none; }
+      .loopregion::before, .loopregion::after { content:""; position:absolute; top:0; bottom:0; width:10px; }
+      .drag-hint { font-size:11px; color:var(--ink-dim); }
+      .revmark { background: var(--marker); }
+      .winregion {
+        position: absolute; top: 0; bottom: 0; background: var(--win);
+        border-left: 1px solid var(--marker); border-right: 1px solid var(--marker);
+        pointer-events: none; display: none;
+      }
+      .vizlabel { font-size: 12px; color: var(--ink-dim); margin: 10px 0 4px; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+      .vizlabel .val { font-size: 12px; }
+      .transport { display: flex; flex-wrap: wrap; gap: 8px; }
+      .transport button { flex: 1 1 86px; }
+      .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+      .timebig { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 22px; font-weight: 700; }
+      .status { font-size: 13px; color: var(--ink-dim); }
+      .status.err { color: var(--warn); }
+      .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
+      .kbd-hint { font-size: 12px; color: var(--ink-dim); }
+      .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+      .seg button { border: 0; border-radius: 0; background: var(--panel2); }
+      .seg button + button { border-left: 1px solid var(--line); }
+      .seg button.on { background: var(--accent); color: var(--accent-ink); }
+      .checkline { display: inline-flex; align-items: center; gap: 8px; min-height: 2.25rem; padding: 4px 6px; cursor: pointer; font-size: 14px; }
+      .checkline input { width: 20px; height: 20px; accent-color: var(--accent); }
+      footer { color: var(--ink-dim); font-size: 12px; padding: 4px 2px 0; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Reverb Time Scrubber</h1>
+      <p class="lead">残響の経過時間（Reverb Time）を、原音の再生位置（Source Time）から独立してスクラブ・固定・逆行させ、5つの処理方式を同一条件で聴き比べる実験サイト。すべての波形・スペクトログラムは実際の音声処理データから描画しています。</p>
+
+      <p class="status" id="status">初期化中…（音はボタン操作後に有効になります）</p>
+
+      <!-- ============ 音源 ============ -->
+      <section aria-label="音源">
+        <h2>1. 音源（Source）</h2>
+        <div class="srcgrid" id="srcGrid"></div>
+        <div class="row" style="margin-top:10px">
+          <label class="ctl" style="flex:2 1 220px">任意の音声ファイル（MP3 / WAV / M4A / OGG / FLAC 対応）
+            <input type="file" id="srcFile" accept="audio/mpeg,audio/mp3,.mp3,audio/wav,audio/x-wav,.wav,audio/ogg,.ogg,audio/mp4,.m4a,audio/aac,.aac,audio/flac,.flac,audio/*" />
+          </label>
+          <label class="ctl" id="freqCtl">発振音源の周波数 <span><output id="freqVal">440</output> Hz</span>
+            <input type="range" id="freq" min="50" max="2000" step="1" value="440" />
+          </label>
+        </div>
+        <div class="vizlabel"><span>原音波形</span><span class="val">Source Time: <span id="srcTime" class="mono">0.00 / 0.00 s</span></span></div>
+        <div class="vizwrap">
+          <canvas class="viz" id="srcWave" width="900" height="64" tabindex="0" role="slider" aria-label="Source Time（波形上で直接操作）" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" aria-valuetext="0.00 s"></canvas>
+          <div class="playhead" id="srcHead"></div>
+        </div>
+        <p class="drag-hint" style="margin:4px 0 0">波形上の再生ヘッドを直接ドラッグ／タップで移動（フォーカス時は ←→ で微調整、Shift+←→ で大きく移動）。再生中はその位置から即再生します。</p>
+        <div class="row" style="margin-top:10px">
+          <button id="playBtn" class="big">▶ 再生</button>
+          <button id="stopBtn">■ 停止</button>
+          <label class="checkline"><input type="checkbox" id="srcLoop" checked /> 原音をループ再生</label>
+          <span class="status">発振・持続系の音源はループ前提の持続音として扱えます。再生を止めると残響側の入力も止まります（IR Scrub の追従確認用）。</span>
+        </div>
+      </section>
+
+      <!-- ============ モード ============ -->
+      <section aria-label="処理方式">
+        <h2>2. 処理方式（Mode）<span class="badge cache">要キャッシュ</span>＝ Wet を事前生成する方式 ／ <span class="badge live">ライブ追従</span>＝ 現在の入力に追従する方式</h2>
+        <div class="modes" id="modeGrid"></div>
+        <div class="note" id="modeNote"></div>
+        <div class="row" style="margin-top:10px">
+          <span style="font-size:13px;color:var(--ink-dim)">A/B 比較:</span>
+          <select id="abA" aria-label="A の方式"></select>
+          <button id="abToggleA">A を聴く</button>
+          <select id="abB" aria-label="B の方式"></select>
+          <button id="abToggleB">B を聴く</button>
+          <span style="font-size:13px;color:var(--ink-dim)">聴取対象:</span>
+          <span class="seg" id="soloSeg">
+            <button data-solo="both" class="on">Dry+Wet</button><button data-solo="dry">Dry のみ</button><button data-solo="wet">Wet のみ</button>
+          </span>
+        </div>
+      </section>
+
+      <!-- ============ Reverb Time ============ -->
+      <section aria-label="Reverb Time 操作">
+        <h2>3. Reverb Time 操作（Source Time には影響しません）</h2>
+        <div class="row">
+          <span class="timebig" id="revTimeBig">0.00 s</span>
+          <span class="status" id="revState">停止中</span>
+        </div>
+        <p class="drag-hint" style="margin:2px 0 6px">参照位置は下の Wet波形／スペクトログラム／IR波形上の赤いマーカーを直接ドラッグして動かします（別途シークバーはありません）。波形にフォーカスして ←→ でも微調整できます。</p>
+        <div class="transport">
+          <button id="toStart">⏮ 先頭</button>
+          <button id="dirRev">◀ 逆行</button>
+          <button id="freezeBtn">❄ 固定 (Freeze)</button>
+          <button id="revPlayBtn" class="on">▶ 進行</button>
+          <button id="dirFwd" class="on">順行 ▶</button>
+        </div>
+        <div class="row">
+          <label class="ctl">進行速度 <span><output id="speedVal">1.00</output> ×</span>
+            <input type="range" id="speed" min="0.05" max="4" step="0.05" value="1" />
+          </label>
+          <div class="ctl" id="winCtl" style="display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--ink-dim)">IR Scrub 切り出し長
+            <span class="val"><span id="winVal">120</span> ms</span>
+            <span class="drag-hint">IR波形で窓の右端をドラッグして変更。</span>
+          </div>
+          <div class="ctl" style="display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--ink-dim)">ループ区間（Wet波形上で編集）
+            <span class="val"><span id="loopAVal">0.00</span> – <span id="loopBVal">1.00</span> s</span>
+            <span class="drag-hint">有効時は Wet波形に区間を表示。端ドラッグで開始/終了、区間内ドラッグで全体移動。</span>
+          </div>
+        </div>
+        <div class="row">
+          <label class="checkline"><input type="checkbox" id="loopOn" /> 区間ループ有効</label>
+          <label class="checkline"><input type="checkbox" id="pingpong" /> 往復（ピンポン）</label>
+          <span class="kbd-hint">参照位置・ループ区間・IR抽出窓はすべて波形上で直接編集します。</span>
+        </div>
+      </section>
+
+      <!-- ============ 可視化 ============ -->
+      <section aria-label="可視化">
+        <h2>4. 可視化（実データ）</h2>
+        <div class="vizlabel"><span>Wet 信号波形（事前生成キャッシュ）</span><span class="val">Reverb Time: <span id="wetPos" class="mono">0.00 s</span></span></div>
+        <div class="vizwrap">
+          <canvas class="viz" id="wetWave" width="900" height="84" tabindex="0" role="slider" aria-label="Reverb Time（Wet波形上で直接操作。ループ有効時は区間の端をドラッグで変更、区間内ドラッグで移動）" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"></canvas>
+          <div class="loopregion" id="wetLoop"></div>
+          <div class="revmark" id="wetMark"></div>
+        </div>
+        <div class="vizlabel"><span>Wet スペクトログラム（STFT 実測・対数周波数）</span><span class="val">マーカーをドラッグ</span></div>
+        <div class="vizwrap">
+          <canvas class="viz" id="spec" width="900" height="150" tabindex="0" role="slider" aria-label="Reverb Time（スペクトログラム上で直接操作）" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"></canvas>
+          <div class="loopregion" id="specLoop"></div>
+          <div class="revmark" id="specMark"></div>
+        </div>
+        <div class="vizlabel"><span>IR 波形</span><span class="val" id="irInfo">—</span></div>
+        <div class="vizwrap">
+          <canvas class="viz" id="irWave" width="900" height="84" tabindex="0" role="slider" aria-label="Reverb Time（IR波形上で抽出窓を直接操作。窓内ドラッグで移動、右端ドラッグで窓長変更）" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"></canvas>
+          <div class="winregion" id="irWin"></div>
+          <div class="revmark" id="irMark"></div>
+        </div>
+        <div class="vizlabel"><span>現在の出力スペクトル（マスター出力の実測）</span><span class="val">20 Hz – 20 kHz</span></div>
+        <canvas id="outSpec" width="900" height="110"></canvas>
+      </section>
+
+      <!-- ============ リバーブ共通設定 ============ -->
+      <section aria-label="リバーブ共通設定">
+        <h2>5. リバーブ共通設定（全方式で共有）</h2>
+        <div class="row">
+          <label class="ctl">IR の種類
+            <select id="irType">
+              <option value="hall">ホール（長く暗い残響）</option>
+              <option value="room">ルーム（短く明瞭）</option>
+              <option value="plate">プレート（明るく高密度）</option>
+              <option value="custom">読み込んだ IR ファイル</option>
+            </select>
+          </label>
+          <label class="ctl" style="flex:2 1 220px">IR 用音声ファイル（MP3 / WAV 等）
+            <input type="file" id="irFile" accept="audio/mpeg,audio/mp3,.mp3,audio/wav,audio/x-wav,.wav,audio/ogg,.ogg,audio/mp4,.m4a,audio/flac,.flac,audio/*" />
+          </label>
+        </div>
+        <div class="row">
+          <label class="ctl">リバーブ時間 RT60 <span><output id="rtVal">2.4</output> s</span>
+            <input type="range" id="rt" min="0.3" max="6" step="0.1" value="2.4" />
+          </label>
+          <label class="ctl">プリディレイ <span><output id="pdVal">20</output> ms</span>
+            <input type="range" id="pd" min="0" max="200" step="1" value="20" />
+          </label>
+          <label class="ctl">Wet / Dry <span>Wet <output id="mixVal">55</output> %</span>
+            <input type="range" id="mix" min="0" max="100" step="1" value="55" />
+          </label>
+          <label class="ctl">出力音量 <span><output id="volVal">80</output> %</span>
+            <input type="range" id="vol" min="0" max="100" step="1" value="80" />
+          </label>
+        </div>
+        <div class="row">
+          <span style="font-size:13px;color:var(--ink-dim)">減衰の扱い:</span>
+          <span class="seg" id="decaySeg">
+            <button data-decay="natural" class="on">自然な減衰を維持</button><button data-decay="comp">音量補正（各位置の音色比較用）</button>
+          </span>
+          <span class="status">音量補正は Wet の実測 RMS に基づき、参照位置ごとのレベル差を抑えます（方式間の音量差による誤認防止）。</span>
+        </div>
+      </section>
+
+      <section aria-label="検証の手引き">
+        <h2>6. 検証の手引き</h2>
+        <div class="note" style="margin-top:0">
+          <b>音源の選び方:</b> サイン波・持続和音のような持続音は残響が定常状態になり、時間位置を動かしても変化が聴き取れません。スクラブ・逆行・ループの確認は、バースト列／インパルス／ドラム／ピアノフレーズなど瞬間音と無音区間のある音源で行ってください（デフォルトはバースト列です）。ファイル読み込みに秒数制限はありません（全長をそのまま扱います）。長いファイルでは Wet キャッシュの生成に時間がかかります。<br />
+          <b>初期反射 vs 後期残響:</b> インパルス音源 + Buffer Scrub で Reverb Time を 0.05 s 付近と 1.5 s 付近に固定して比較。<br />
+          <b>固定時の持続音:</b> Freeze で Buffer（短区間ループ）と Spectral（スペクトル保持）の持続の質感の違いを確認。<br />
+          <b>逆行:</b> Buffer の逆行は波形そのものが逆再生されるのに対し、IR Scrub の逆行は「残響特性の時間反転」を入力に適用する点が異なる。<br />
+          <b>ピッチ変化:</b> サイン波・和音で速度を変え、Spectral / IR がピッチを保ち、Buffer の読み取りがどう変化するかを確認。<br />
+          <b>入力追従:</b> ピアノフレーズや発振周波数の変更に対し、IR Scrub は即追従し、キャッシュ方式は再生成が必要（音源変更時に自動再生成）。<br />
+          <b>任意位置から再生:</b> 原音波形上の再生ヘッドをドラッグすると、その位置から再生できます（再生中は即座にその位置から鳴り、全モード共通）。Reverb Time とは独立です。
+        </div>
+      </section>
+
+      <footer>実験用プロトタイプ。各方式の原理と近似・制約はモード説明に明示しています。出力段にはリミッタ（コンプレッサ）を挿入し、操作時の異常な音量上昇を抑えています。</footer>
+    </main>
+
+    <script>
+    'use strict';
+    /* ================================================================
+       Reverb Time Scrubber
+       方式:
+         dry      : 原音のみ
+         normal   : 通常のコンボリューションリバーブ (ライブ)
+         buffer   : Wet キャッシュのグラニュラー読み取り (位置/方向/速度/固定)
+         spectral : Wet の STFT を再合成 (位相は真の瞬時周波数で前進 = ピッチ不変)
+         ir       : IR の時間窓を切り出して現在の入力に畳み込む (ライブ追従)
+       ================================================================ */
+    const $ = s => document.querySelector(s);
+    const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+    const lerp = (a, b, t) => a + (b - a) * t;
+    function princarg(x) { return x - 2 * Math.PI * Math.round(x / (2 * Math.PI)); }
+    function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+    /* ---------- FFT (反復型 radix-2, in-place) ---------- */
+    function fft(re, im, invert) {
+      const n = re.length;
+      for (let i = 1, j = 0; i < n; i++) {
+        let bit = n >> 1;
+        for (; j & bit; bit >>= 1) j ^= bit;
+        j ^= bit;
+        if (i < j) {
+          let t = re[i]; re[i] = re[j]; re[j] = t;
+          t = im[i]; im[i] = im[j]; im[j] = t;
+        }
+      }
+      for (let len = 2; len <= n; len <<= 1) {
+        const ang = 2 * Math.PI / len * (invert ? 1 : -1);
+        const wr = Math.cos(ang), wi = Math.sin(ang);
+        for (let i = 0; i < n; i += len) {
+          let cwr = 1, cwi = 0;
+          for (let j = 0; j < len / 2; j++) {
+            const ur = re[i + j], ui = im[i + j];
+            const vr = re[i + j + len / 2] * cwr - im[i + j + len / 2] * cwi;
+            const vi = re[i + j + len / 2] * cwi + im[i + j + len / 2] * cwr;
+            re[i + j] = ur + vr; im[i + j] = ui + vi;
+            re[i + j + len / 2] = ur - vr; im[i + j + len / 2] = ui - vi;
+            const nwr = cwr * wr - cwi * wi; cwi = cwr * wi + cwi * wr; cwr = nwr;
+          }
+        }
+      }
+      if (invert) { for (let i = 0; i < n; i++) { re[i] /= n; im[i] /= n; } }
+    }
+
+    /* ---------- 状態 ---------- */
+    const S = {
+      mode: 'normal',
+      srcId: 'clicks',
+      freq: 440,
+      playing: false,
+      srcStartCtxTime: 0,
+      srcBuf: null, srcDur: 0, srcName: '', srcPos: 0,
+      irBuf: null, irDur: 0, irCustomBuf: null,
+      wetBuf: null, wetRevBuf: null, wetDur: 0,
+      stft: null,           // {frames, bins, size, hop, mag, phase, rms[]}
+      wetRms: null,         // 参照位置ごとの RMS (音量補正用)
+      revTime: 0, revPlaying: true, freeze: false, dir: 1, speed: 1,
+      loopOn: false, pingpong: false, loopA: 0, loopB: 1,
+      winLen: 0.12,
+      decayMode: 'natural',
+      solo: 'both',
+      cacheGen: 0,          // キャッシュ再生成の世代カウンタ
+      specPhase: null, specCarry: null, specNormCarry: null, specInitPos: -1, specLastPos: null,
+    };
+
+    /* ---------- AudioContext とグラフ ---------- */
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const SR = ctx.sampleRate;
+    const srcBus = ctx.createGain();          // 全音源の合流点
+    const dryGain = ctx.createGain();
+    const wetBus = ctx.createGain();          // 全 Wet 方式の合流点
+    const master = ctx.createGain();
+    const compNode = ctx.createDynamicsCompressor();
+    compNode.threshold.value = -12; compNode.knee.value = 18; compNode.ratio.value = 12;
+    compNode.attack.value = 0.003; compNode.release.value = 0.24;
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 2048; analyser.smoothingTimeConstant = 0.55;
+    srcBus.connect(dryGain); dryGain.connect(master);
+    wetBus.connect(master);
+    master.connect(compNode); compNode.connect(analyser); analyser.connect(ctx.destination);
+    master.gain.value = 0.8;
+
+    // Normal Reverb
+    const normalConv = ctx.createConvolver();
+    const normalGain = ctx.createGain(); normalGain.gain.value = 0;
+    srcBus.connect(normalConv); normalConv.connect(normalGain); normalGain.connect(wetBus);
+    // Buffer Scrub (グラニュラー出力)
+    const bufferGain = ctx.createGain(); bufferGain.gain.value = 0; bufferGain.connect(wetBus);
+    // Spectral Scrub (チャンク出力)
+    const specGain = ctx.createGain(); specGain.gain.value = 0; specGain.connect(wetBus);
+    // IR Scrub (デュアルコンボルバ + クロスフェード → Mix 専用ゲイン段)
+    // irGainA/B はスライス差し替えのクロスフェード専用、irWetGain は Mix/ソロ専用。
+    // 役割を分けることで、Mix 変更がスライス差し替えなしに即反映される。
+    const irConvA = ctx.createConvolver(), irConvB = ctx.createConvolver();
+    // 個別窓の自動正規化は残響の自然な減衰を消す。全IRの共通係数を使用する。
+    irConvA.normalize = false; irConvB.normalize = false;
+    let irFullScale = 1;
+    const irGainA = ctx.createGain(), irGainB = ctx.createGain();
+    const irWetGain = ctx.createGain(); irWetGain.gain.value = 0;
+    irGainA.gain.value = 0; irGainB.gain.value = 0;
+    srcBus.connect(irConvA); irConvA.connect(irGainA); irGainA.connect(irWetGain);
+    srcBus.connect(irConvB); irConvB.connect(irGainB); irGainB.connect(irWetGain);
+    irWetGain.connect(wetBus);
+    let irActiveIsA = true, irLastSliceKey = '', irLastSwapAt = 0;
+
+    let srcNode = null, srcGain = null; // 現在の AudioBufferSourceNode とそのフェード用ゲイン
+
+    function setStatus(msg, isErr) {
+      const el = $('#status'); el.textContent = msg; el.classList.toggle('err', !!isErr);
+    }
+
+    /* ================================================================
+       音源生成 (すべて実バッファとして合成)
+       ================================================================ */
+    function mkBuf(sec) { return ctx.createBuffer(2, Math.max(1, Math.round(sec * SR)), SR); }
+    function pianoTone(ch, t0, freq, dur, vel) {
+      // 加算合成ピアノ: 非整数次倍音 + 指数減衰 + ハンマーノイズ
+      const partials = [[1, 1.0, 1.0], [2, 0.55, 0.62], [3, 0.32, 0.42], [4, 0.20, 0.30],
+                        [5, 0.12, 0.22], [6, 0.08, 0.16], [7, 0.05, 0.12], [8, 0.03, 0.09]];
+      const start = Math.floor(t0 * SR), len = Math.floor(dur * SR);
+      for (let i = 0; i < len && start + i < ch.length; i++) {
+        const t = i / SR;
+        let v = 0;
+        for (const [m, g, d] of partials) {
+          const f = freq * m * (1 + 0.0004 * m * m);
+          v += g * Math.sin(2 * Math.PI * f * t) * Math.exp(-t * (2.2 / d) * (freq / 261.63) ** 0.35);
+        }
+        v += (Math.random() * 2 - 1) * 0.25 * Math.exp(-t * 90); // ハンマー
+        ch[start + i] += v * vel * Math.min(1, t * 400);
+      }
+    }
+    const SRC_DEFS = [
+      { id: 'clicks', name: 'バースト列', sub: '瞬間音・5連 3秒', gen() {
+          // 瞬間音 + 無音区間: 残響の尾が単独で聴こえ、参照位置が音の順序で判別できる
+          const b = mkBuf(3), L = b.getChannelData(0);
+          const freqs = [800, 1000, 1250, 1500, 1800];
+          freqs.forEach((f, n) => {
+            const s = Math.floor(n * 0.6 * SR), len = Math.floor(0.09 * SR);
+            for (let i = 0; i < len && s + i < L.length; i++) {
+              const t = i / SR;
+              L[s + i] += Math.sin(2 * Math.PI * f * t) * Math.exp(-t * 55) * (0.55 + n * 0.1);
+            }
+          });
+          const R = b.getChannelData(1); for (let i = 0; i < R.length; i++) R[i] = L[i] * 0.94; return b; } },
+      { id: 'impulse', name: 'インパルス', sub: '残響特性そのもの', gen() {
+          const b = mkBuf(1.2), L = b.getChannelData(0), R = b.getChannelData(1);
+          L[0] = 0.95; R[0] = 0.95; return b; } },
+      { id: 'sine', name: 'サイン波', sub: '単一周波数', osc: true, gen(f) {
+          const dur = Math.max(1, Math.round(3 * f)) / f, b = mkBuf(dur);
+          for (let c = 0; c < 2; c++) { const ch = b.getChannelData(c);
+            for (let i = 0; i < ch.length; i++) ch[i] = 0.6 * Math.sin(2 * Math.PI * f * i / SR); } return b; } },
+      { id: 'square', name: '矩形波', sub: '奇数倍音', osc: true, gen(f) {
+          const dur = Math.max(1, Math.round(3 * f)) / f, b = mkBuf(dur);
+          for (let c = 0; c < 2; c++) { const ch = b.getChannelData(c);
+            for (let i = 0; i < ch.length; i++) { let v = 0;
+              for (let k = 1; k <= 31; k += 2) v += Math.sin(2 * Math.PI * f * k * i / SR) / k;
+              ch[i] = 0.42 * v; } } return b; } },
+      { id: 'saw', name: '鋸歯状波', sub: '全倍音', osc: true, gen(f) {
+          const dur = Math.max(1, Math.round(3 * f)) / f, b = mkBuf(dur);
+          for (let c = 0; c < 2; c++) { const ch = b.getChannelData(c);
+            for (let i = 0; i < ch.length; i++) { let v = 0;
+              for (let k = 1; k <= 40; k++) v += Math.sin(2 * Math.PI * f * k * i / SR) / k;
+              ch[i] = 0.36 * v; } } return b; } },
+      { id: 'noise', name: 'ホワイトノイズ', sub: '広帯域特性', gen() {
+          const b = mkBuf(3);
+          for (let c = 0; c < 2; c++) { const ch = b.getChannelData(c);
+            for (let i = 0; i < ch.length; i++) ch[i] = (Math.random() * 2 - 1) * 0.4; } return b; } },
+      { id: 'chord', name: '持続和音', sub: 'Cmaj7 持続', gen() {
+          const b = mkBuf(4), freqs = [261.63, 329.63, 392.00, 493.88];
+          for (let c = 0; c < 2; c++) { const ch = b.getChannelData(c);
+            for (let i = 0; i < ch.length; i++) { const t = i / SR; let v = 0;
+              for (const f of freqs) v += 0.16 * Math.sin(2 * Math.PI * f * t);
+              ch[i] = v * Math.min(1, t * 8) * Math.min(1, (b.duration - t) * 8); } } return b; } },
+      { id: 'piano', name: 'ピアノ単音', sub: '合成・約2.8秒 C4', gen() {
+          const b = mkBuf(2.8); pianoTone(b.getChannelData(0), 0, 261.63, 2.8, 0.85);
+          const R = b.getChannelData(1), L = b.getChannelData(0);
+          for (let i = 0; i < R.length; i++) R[i] = L[i] * 0.92; return b; } },
+      { id: 'phrase', name: 'ピアノフレーズ', sub: '合成・5音', gen() {
+          const b = mkBuf(3.6), notes = [261.63, 329.63, 392.00, 523.25, 392.00];
+          notes.forEach((f, i) => pianoTone(b.getChannelData(0), i * 0.55, f, 1.6, 0.8));
+          const R = b.getChannelData(1), L = b.getChannelData(0);
+          for (let i = 0; i < R.length; i++) R[i] = L[i] * 0.92; return b; } },
+      { id: 'drum', name: 'ドラム', sub: '合成キット 2秒', gen() {
+          const b = mkBuf(2), L = b.getChannelData(0);
+          const hit = (t0, fn) => { const s = Math.floor(t0 * SR);
+            for (let i = 0; s + i < L.length; i++) L[s + i] += fn(i / SR); };
+          for (let beat = 0; beat < 4; beat++) {
+            const t0 = beat * 0.5;
+            hit(t0, t => Math.sin(2 * Math.PI * (120 - 70 * Math.min(1, t * 9)) * t) * Math.exp(-t * 14) * 0.9); // キック
+            hit(t0 + 0.25, t => ((Math.random() * 2 - 1) * Math.exp(-t * 55) * 0.5)
+              + Math.sin(2 * Math.PI * 190 * t) * Math.exp(-t * 40) * 0.25); // スネア
+            hit(t0, t => (Math.random() * 2 - 1) * Math.exp(-t * 160) * 0.22); // ハット
+            hit(t0 + 0.25, t => (Math.random() * 2 - 1) * Math.exp(-t * 160) * 0.18);
+          }
+          const R = b.getChannelData(1); for (let i = 0; i < R.length; i++) R[i] = L[i] * 0.95; return b; } },
+    ];
+    function genSource(id) {
+      const def = SRC_DEFS.find(d => d.id === id);
+      return def.osc ? def.gen(S.freq) : def.gen();
+    }
+
+    /* ---------- ファイル読み込み (MP3 等) ----------
+       decodeAudioData は渡した ArrayBuffer を detach するため毎回コピーを渡す。
+       メインコンテキストで失敗した場合は新規コンテキスト / OfflineAudioContext で再試行する。 */
+    async function decodeAudioFile(file) {
+      const raw = await file.arrayBuffer();
+      try { return await ctx.decodeAudioData(raw.slice(0)); } catch (e1) {
+        try {
+          // 一時コンテキストは使い終わったら必ず閉じる (Safari の生成数上限対策)。
+          // コールバック形式と Promise 形式の両対応で、どちらか先に解決した方を採用する。
+          return await new Promise((res, rej) => {
+            const c = new (window.AudioContext || window.webkitAudioContext)();
+            let settled = false;
+            const done = v => { if (settled) return; settled = true; try { c.close(); } catch (e) {} res(v); };
+            const fail = e => { if (settled) return; settled = true; try { c.close(); } catch (e) {} rej(e); };
+            try {
+              const p = c.decodeAudioData(raw.slice(0), done, fail);
+              if (p && p.then) p.then(done, fail);
+            } catch (e) { fail(e); }
+          });
+        } catch (e2) {
+          const off = new OfflineAudioContext(2, 1, 44100);
+          return await off.decodeAudioData(raw.slice(0));
+        }
+      }
+    }
+    // ファイルは全長をそのまま扱う (秒数での切り捨てはしない)。
+    // 差し替えはデコード成功後にだけ行うため、失敗しても現在の音源は壊れない。
+
+    /* ================================================================
+       IR 生成 (生成ノイズ減衰 + 初期反射タップ / ファイル差し替え可)
+       ================================================================ */
+    function fullIRScale(buf) {
+      // Web Audio ConvolverNodeの全IR正規化と同じRMS基準・サンプルレート補正。
+      let sum = 0;
+      for (let c = 0; c < buf.numberOfChannels; c++) {
+        const a = buf.getChannelData(c);
+        for (let i = 0; i < a.length; i++) sum += a[i] * a[i];
+      }
+      const rms = Math.sqrt(sum / (buf.length * buf.numberOfChannels));
+      const safeRms = Number.isFinite(rms) ? Math.max(rms, 0.000125) : 0.000125;
+      return 0.00125 * (44100 / buf.sampleRate) / safeRms * (buf.numberOfChannels === 4 ? 0.5 : 1);
+    }
+    function genIR() {
+      const type = $('#irType').value;
+      if (type === 'custom' && S.irCustomBuf) { S.irBuf = S.irCustomBuf; }
+      else {
+        const rt = parseFloat($('#rt').value), pd = parseFloat($('#pd').value) / 1000;
+        const dur = pd + rt, b = ctx.createBuffer(2, Math.ceil(dur * SR), SR);
+        const dampK = type === 'plate' ? 0.10 : type === 'room' ? 0.30 : 0.45; // 一極 LPF の重み
+        const taps = type === 'room' ? [0.011, 0.017, 0.029, 0.043]
+                   : type === 'hall' ? [0.013, 0.021, 0.034, 0.052, 0.071] : [];
+        for (let c = 0; c < 2; c++) {
+          const ch = b.getChannelData(c);
+          let lp = 0;
+          for (let i = 0; i < ch.length; i++) {
+            const t = i / SR; if (t < pd) continue;
+            const tt = t - pd;
+            const env = Math.exp(-6.9078 * tt / rt);
+            const w = (Math.random() * 2 - 1);
+            // 一極ローパスで高域を徐々に減衰させる (係数は安定範囲内)
+            const coef = (0.28 + 0.5 * dampK) * (type === 'plate' ? 0.9 : 0.55);
+            lp = lp + coef * (w - lp);
+            ch[i] = lp * env * 0.8;
+          }
+          for (const tp of taps) {
+            const idx = Math.floor((pd + tp) * SR);
+            if (idx < ch.length) ch[idx] += (Math.random() * 0.5 + 0.35) * (c ? -0.8 : 1);
+          }
+          ch[Math.floor(pd * SR)] += 0.9; // 直達成分相当の先頭タップ
+        }
+        S.irBuf = b;
+      }
+      S.irDur = S.irBuf.duration;
+      irFullScale = fullIRScale(S.irBuf);
+      normalConv.buffer = S.irBuf;
+      irLastSliceKey = '';
+      $('#irInfo').textContent = '長さ ' + S.irDur.toFixed(2) + ' s / ' +
+        ($('#irType').value === 'custom' && S.irCustomBuf ? 'ファイル IR' : '生成 IR (RT60 ' + $('#rt').value + ' s)');
+      drawWave($('#irWave'), S.irBuf);
+    }
+
+    /* ================================================================
+       Wet キャッシュ生成 (OfflineAudioContext で畳み込み) + STFT 解析
+       ================================================================ */
+    const FFT_SIZE = 2048, HOP = 512, BINS = FFT_SIZE / 2 + 1;
+    const hann = new Float32Array(FFT_SIZE);
+    for (let i = 0; i < FFT_SIZE; i++) hann[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (FFT_SIZE - 1));
+
+    async function rebuildWet() {
+      if (!S.srcBuf || !S.irBuf) return;
+      const gen = ++S.cacheGen;
+      setStatus('Wet 信号を生成中…（畳み込み + スペクトル解析）');
+      const total = S.srcBuf.duration + S.irBuf.duration;
+      const off = new OfflineAudioContext(2, Math.ceil(total * SR), SR);
+      const src = off.createBufferSource(); src.buffer = S.srcBuf;
+      const conv = off.createConvolver(); conv.buffer = S.irBuf;
+      src.connect(conv); conv.connect(off.destination); src.start(0);
+      let wet;
+      try { wet = await off.startRendering(); } catch (e) { setStatus('Wet 生成に失敗: ' + e.message, true); return; }
+      if (gen !== S.cacheGen) return; // 古い生成結果は破棄
+      S.wetBuf = wet; S.wetDur = wet.duration;
+      // 逆再生用コピー
+      const rev = ctx.createBuffer(2, wet.length, SR);
+      for (let c = 0; c < 2; c++) {
+        const a = wet.getChannelData(c), b = rev.getChannelData(c);
+        for (let i = 0; i < a.length; i++) b[i] = a[a.length - 1 - i];
+      }
+      S.wetRevBuf = rev;
+      analyzeSTFT(wet);
+      buildWetRms(wet);
+      S.specPhase = null; S.specCarry = null; S.specNormCarry = null; S.specInitPos = -1; S.specLastPos = null;
+      grainPrev.key = ''; grainPrev.offset = -1;
+      // UI の時間軸を現在の方式の軸 (Wet 長 / IR 長) に合わせる
+      syncTimeAxis();
+      drawWave($('#wetWave'), wet);
+      drawSpectrogram();
+      updateRevUI();
+      setStatus('準備完了: ' + S.srcName + ' / Wet ' + S.wetDur.toFixed(2) + ' s（キャッシュ生成済み）');
+    }
+
+    function analyzeSTFT(wet) {
+      const L = wet.getChannelData(0), R = wet.numberOfChannels > 1 ? wet.getChannelData(1) : L;
+      const frames = Math.max(1, Math.floor((wet.length - FFT_SIZE) / HOP) + 1);
+      const mag = new Float32Array(frames * BINS), phase = new Float32Array(frames * BINS);
+      const re = new Float32Array(FFT_SIZE), im = new Float32Array(FFT_SIZE);
+      for (let f = 0; f < frames; f++) {
+        const off = f * HOP;
+        for (let i = 0; i < FFT_SIZE; i++) {
+          const idx = off + i;
+          re[i] = (idx < L.length ? (L[idx] + R[idx]) * 0.5 : 0) * hann[i]; im[i] = 0;
+        }
+        fft(re, im, false);
+        for (let k = 0; k < BINS; k++) {
+          mag[f * BINS + k] = Math.hypot(re[k], im[k]);
+          phase[f * BINS + k] = Math.atan2(im[k], re[k]);
+        }
+      }
+      S.stft = { frames, mag, phase };
+    }
+
+    function buildWetRms(wet) {
+      const win = Math.floor(0.05 * SR), n = Math.ceil(wet.length / win);
+      const rms = new Float32Array(n);
+      const L = wet.getChannelData(0), R = wet.numberOfChannels > 1 ? wet.getChannelData(1) : L;
+      for (let w = 0; w < n; w++) {
+        let sum = 0, cnt = 0;
+        for (let i = w * win; i < Math.min(wet.length, (w + 1) * win); i += 4) { const v = (L[i] + R[i]) * 0.5; sum += v * v; cnt++; }
+        rms[w] = Math.sqrt(sum / Math.max(1, cnt));
+      }
+      S.wetRms = rms;
+    }
+    function wetRmsAt(t) {
+      if (!S.wetRms) return 0;
+      return S.wetRms[clamp(Math.floor(t / 0.05), 0, S.wetRms.length - 1)] || 0;
+    }
+    function compGainFor(t) {
+      // 音量補正: Wet 全体の中央値レベルに寄せる (上限/下限で暴走防止)
+      if (S.decayMode !== 'comp' || !S.wetRms) return 1;
+      const r = wetRmsAt(t);
+      if (r < 1e-4) return 1;
+      return clamp(0.16 / r, 0.3, 3.5);
+    }
+
+    /* ================================================================
+       再生 (Source)
+       ================================================================ */
+    function currentSrcPos() {
+      if (!S.srcBuf || S.srcDur <= 0) return 0;
+      if (!S.playing) return clamp(S.srcPos, 0, S.srcDur);
+      const p = S.srcPos + (ctx.currentTime - S.srcStartCtxTime);
+      if ($('#srcLoop').checked) return p % S.srcDur;
+      return clamp(p, 0, S.srcDur);
+    }
+    function startSource(fromPos) {
+      if (!S.srcBuf) return;
+      // 新ソースを準備・開始してから旧ソースを止める (差し替えは準備完了後に行い、
+      // 二重再生や位置ズレを防ぐ — AudioTime の transport パターン)。
+      // 継ぎ目はソースごとのゲインで 8ms フェードし、ハードカットによるクリックを防ぐ。
+      const pos = clamp(fromPos != null ? fromPos : S.srcPos, 0, Math.max(0, S.srcDur - 0.001));
+      const node = ctx.createBufferSource();
+      node.buffer = S.srcBuf; node.loop = $('#srcLoop').checked;
+      const g = ctx.createGain();
+      const now = ctx.currentTime;
+      g.gain.setValueAtTime(0, now);
+      g.gain.linearRampToValueAtTime(1, now + 0.008);
+      node.connect(g); g.connect(srcBus);
+      node.onended = () => {
+        if (srcNode === node && !node.loop) {
+          S.playing = false; S.srcPos = 0; srcNode = null; srcGain = null;
+          try { node.disconnect(); } catch (e) {} try { g.disconnect(); } catch (e) {}
+          $('#playBtn').textContent = '▶ 再生'; updateRevUI();
+        }
+      };
+      node.start(0, pos);
+      const old = srcNode, oldGain = srcGain;
+      if (old && old !== node) {
+        old.onended = null;
+        if (oldGain) {
+          oldGain.gain.cancelScheduledValues(now);
+          oldGain.gain.setValueAtTime(oldGain.gain.value, now);
+          oldGain.gain.linearRampToValueAtTime(0, now + 0.008);
+        }
+        try { old.stop(now + 0.03); } catch (e) {}
+        setTimeout(() => { try { old.disconnect(); } catch (e) {} if (oldGain) try { oldGain.disconnect(); } catch (e) {} }, 90);
+      }
+      srcNode = node; srcGain = g;
+      S.srcPos = pos; S.srcStartCtxTime = ctx.currentTime; S.playing = true;
+      $('#playBtn').textContent = '▶ 再生中';
+    }
+    function seekSource(t) {
+      if (!S.srcBuf) return;
+      t = clamp(t, 0, Math.max(0, S.srcDur - 0.001));
+      if (S.playing) startSource(t); // 再生中は即座にその位置から鳴らす (全モード共通)
+      else { S.srcPos = t; updateRevUI(); } // 停止中は次回 ▶ の開始位置になる
+    }
+    function stopSourceNodes() {
+      if (!srcNode) return;
+      const n = srcNode, g = srcGain; srcNode = null; srcGain = null;
+      n.onended = null;
+      const now = ctx.currentTime;
+      if (g) {
+        g.gain.cancelScheduledValues(now);
+        g.gain.setValueAtTime(g.gain.value, now);
+        g.gain.linearRampToValueAtTime(0, now + 0.01); // ハードカットによるクリック防止
+      }
+      try { n.stop(now + 0.03); } catch (e) {}
+      setTimeout(() => { try { n.disconnect(); } catch (e) {} if (g) try { g.disconnect(); } catch (e) {} }, 90);
+    }
+    function stopSource() { if (S.playing) S.srcPos = currentSrcPos(); stopSourceNodes(); S.playing = false; $('#playBtn').textContent = '▶ 再生'; updateRevUI(); }
+
+    /* ================================================================
+       Buffer Scrub: グラニュラー読み取り
+       粒 140ms / ホップ 70ms、Hann 窓。速度は位置の進行速度であり
+       粒自体は等速再生のためピッチは変わらない (方式として明示)。
+       逆行時は反転バッファから粒を取るため波形自体が逆再生される。
+       ================================================================ */
+    const GRAIN = 0.14, GRAIN_HOP = 0.07;
+    let grainTimer = null, nextGrainTime = 0;
+    // 時刻 when に鳴る粒は、その再生時刻における参照位置から取る。
+    // (スケジュール時点の位置で取ると先行予約した粒がすべて同じ位置になり位相がずれてプチプチ鳴る)
+    // ループ区間への射影 (純関数): 時計 advanceRevTime の状態遷移とは別に、
+    // グラニュラーの先読みが「その時刻に聞こえる位置」を求めるために使う共通計算。
+    function projectInLoop(p) {
+      if (!S.loopOn) return p;
+      const a = Math.min(S.loopA, S.loopB), b = Math.max(S.loopA, S.loopB), len = b - a;
+      if (len <= 0.001) return p;
+      if (S.pingpong) {
+        let ph = (p - a) % (2 * len); if (ph < 0) ph += 2 * len;
+        return a + (ph <= len ? ph : 2 * len - ph);
+      }
+      let r = (p - a) % len; if (r < 0) r += len;
+      return a + r;
+    }
+    function revPosAt(when) {
+      let p = S.revTime;
+      if (S.revPlaying && !S.freeze) p += S.dir * S.speed * Math.max(0, when - ctx.currentTime);
+      if (S.loopOn) return projectInLoop(p);
+      return clamp(p, 0, S.wetDur);
+    }
+    // WSOLA: 前回粒の「続き」と波形類似度 (正規化相関 − 距離ペナルティ) が最大の
+    // 位置を期待位置の前後で探索し、粒境界の位相不連続 (= プチ音) を防ぐ。
+    // バッファ内では順行・逆行とも粒オフセットは +ホップずつ進むため共通に扱える。
+    const grainPrev = { key: '', offset: -1 };
+    function pickGrainOffset(buf, nominalSec, key) {
+      const ch = buf.getChannelData(0);
+      const grainS = Math.floor(GRAIN * SR), hopS = Math.floor(GRAIN_HOP * SR);
+      const maxOff = Math.max(0, buf.length - grainS - 1);
+      const nom = clamp(Math.round(nominalSec * SR), 0, maxOff);
+      if (grainPrev.key !== key || grainPrev.offset < 0) { grainPrev.key = key; grainPrev.offset = nom; return nom / SR; }
+      const cont = grainPrev.offset + hopS; // 前回粒の続きにあたる位置
+      const search = Math.floor(grainS * 0.25);
+      if (Math.abs(nom - cont) > search * 2) { grainPrev.offset = nom; return nom / SR; } // シーク等の跳躍時はリセット
+      const ovl = Math.min(768, grainS - hopS);
+      const refOff = clamp(cont, 0, maxOff);
+      let refE = 0;
+      for (let j = 0; j < ovl; j++) { const v = ch[refOff + j]; refE += v * v; }
+      let best = nom, bestScore = -Infinity;
+      const lo = Math.max(0, nom - search), hiO = Math.min(maxOff, nom + search);
+      for (let o = lo; o <= hiO; o += 6) {
+        let dot = 0, e = 0;
+        for (let j = 0; j < ovl; j++) { const v = ch[o + j]; dot += v * ch[refOff + j]; e += v * v; }
+        const corr = (refE > 1e-9 && e > 1e-9) ? dot / Math.sqrt(refE * e) : 0;
+        const score = corr - 0.25 * Math.abs(o - nom) / search;
+        if (score > bestScore) { bestScore = score; best = o; }
+      }
+      grainPrev.offset = best;
+      return best / SR;
+    }
+    function scheduleGrain(when) {
+      if (!S.wetBuf) return;
+      const t = revPosAt(when);
+      const useRev = S.revPlaying && !S.freeze && S.dir < 0;
+      const buf = useRev ? S.wetRevBuf : S.wetBuf;
+      // 前進・逆行とも粒の中心が参照位置 t に一致する位置を期待位置とし、WSOLA で微調整する
+      const nominal = useRev ? (S.wetDur - t - GRAIN / 2) : (t - GRAIN / 2);
+      const offset = pickGrainOffset(buf, nominal, useRev ? 'R' : 'F');
+      const src = ctx.createBufferSource(); src.buffer = buf;
+      const g = ctx.createGain();
+      const curve = new Float32Array(64);
+      for (let i = 0; i < 64; i++) curve[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / 63);
+      g.gain.setValueCurveAtTime(curve, when, GRAIN);
+      src.connect(g); g.connect(bufferGain);
+      src.start(when, offset, GRAIN + 0.02);
+    }
+    function grainLoop() {
+      if (S.mode !== 'buffer' || ctx.state !== 'running') return;
+      while (nextGrainTime < ctx.currentTime + 0.14) {
+        if (nextGrainTime < ctx.currentTime - 0.05) nextGrainTime = ctx.currentTime + 0.02;
+        scheduleGrain(nextGrainTime);
+        nextGrainTime += GRAIN_HOP;
+      }
+      bufferGain.gain.setTargetAtTime(wetLevel() * compGainFor(S.revTime), ctx.currentTime, 0.05);
+    }
+
+    /* ================================================================
+       Spectral Scrub: STFT 再合成
+       振幅は参照位置の前後フレームを補間。位相は解析位相差 (瞬時周波数)
+       で前進させるため、移動速度・方向によらずピッチは変化しない。
+       固定時はその時点の周波数構成が持続する。
+       ================================================================ */
+    const SPEC_CHUNK = 16384;
+    let specTimer = null, nextSpecTime = 0;
+    function renderSpecChunk() {
+      const out = ctx.createBuffer(2, SPEC_CHUNK, SR);
+      const mono = new Float32Array(SPEC_CHUNK + FFT_SIZE);
+      const norm = new Float32Array(SPEC_CHUNK + FFT_SIZE);
+      if (S.specCarry) mono.set(S.specCarry.subarray(0, FFT_SIZE), 0);
+      if (S.specNormCarry) norm.set(S.specNormCarry.subarray(0, FFT_SIZE), 0);
+      const st = S.stft;
+      if (st) {
+        // 位相の初期化は「シーク等の不連続ジャンプ」のときだけ。
+        // 連続移動中に初期化すると位相が切れて周期的なクリック (プチプチ) になるため、
+        // 前回レンダリング位置 (specLastPos) との差で判定する。
+        if (!S.specPhase || S.specInitPos === -1 ||
+            (S.specLastPos !== null && Math.abs(S.revTime - S.specLastPos) > 0.3)) {
+          const f0 = clamp(Math.round(S.revTime * SR / HOP), 0, st.frames - 1);
+          S.specPhase = new Float32Array(BINS);
+          for (let k = 0; k < BINS; k++) S.specPhase[k] = st.phase[f0 * BINS + k];
+          S.specInitPos = S.revTime;
+        }
+        S.specLastPos = S.revTime;
+        const re = new Float32Array(FFT_SIZE), im = new Float32Array(FFT_SIZE);
+        const steps = Math.ceil(SPEC_CHUNK / HOP);
+        for (let sIdx = 0; sIdx < steps; sIdx++) {
+          const fpos = clamp(S.revTime * SR / HOP, 0, st.frames - 1.001);
+          const i0 = Math.floor(fpos), fr = fpos - i0, i1 = Math.min(st.frames - 1, i0 + 1);
+          for (let k = 0; k < BINS; k++) {
+            const m = lerp(st.mag[i0 * BINS + k], st.mag[i1 * BINS + k], fr);
+            const expected = 2 * Math.PI * HOP * k / FFT_SIZE;
+            const delta = princarg(st.phase[Math.min(st.frames - 1, i0 + 1) * BINS + k] - st.phase[i0 * BINS + k] - expected) + expected;
+            // 位相は毎ホップ [-π, π] にラップして蓄積する。無制限に加算すると
+            // Float32 の精度が落ちて高域から位相が崩れ、プチ音・ノイズ化する。
+            S.specPhase[k] = princarg(S.specPhase[k] + delta);
+            re[k] = m * Math.cos(S.specPhase[k]); im[k] = m * Math.sin(S.specPhase[k]);
+          }
+          for (let k = 1; k < FFT_SIZE / 2; k++) { re[FFT_SIZE - k] = re[k]; im[FFT_SIZE - k] = -im[k]; }
+          re[0] = Math.abs(re[0]); im[0] = 0; re[FFT_SIZE / 2] = Math.abs(re[FFT_SIZE / 2]); im[FFT_SIZE / 2] = 0;
+          fft(re, im, true);
+          const base = sIdx * HOP;
+          // OLA: 合成窓を重ね、後段で Σw² (norm) で割って正規化する。
+          // 固定係数 2/3 は定常部でしか合わず、端部・遷移部で振幅変調が残るため。
+          for (let i = 0; i < FFT_SIZE && base + i < mono.length; i++) {
+            mono[base + i] += re[i] * hann[i];
+            norm[base + i] += hann[i] * hann[i];
+          }
+          // チャンク内で参照位置を進める (制御ループと同じ規則)
+          advanceRevTime(HOP / SR);
+          S.specLastPos = S.revTime;
+        }
+      }
+      const L = out.getChannelData(0), R = out.getChannelData(1);
+      for (let i = 0; i < SPEC_CHUNK; i++) {
+        let v = mono[i] / Math.max(norm[i], 0.35);
+        if (!Number.isFinite(v)) v = 0; // 位相系の NaN / Inf は 0 に潰す (安全処理)
+        v = clamp(v, -1.2, 1.2);
+        L[i] = v; R[i] = v * 0.96;
+      }
+      S.specCarry = mono.slice(SPEC_CHUNK, SPEC_CHUNK + FFT_SIZE);
+      S.specNormCarry = norm.slice(SPEC_CHUNK, SPEC_CHUNK + FFT_SIZE);
+      return out;
+    }
+    function specLoop() {
+      if (S.mode !== 'spectral' || ctx.state !== 'running') return;
+      while (nextSpecTime < ctx.currentTime + 0.65) {
+        if (nextSpecTime < ctx.currentTime - 0.05) nextSpecTime = ctx.currentTime + 0.02;
+        const src = ctx.createBufferSource(); src.buffer = renderSpecChunk();
+        src.connect(specGain); src.start(nextSpecTime);
+        nextSpecTime += SPEC_CHUNK / SR;
+      }
+      specGain.gain.setTargetAtTime(wetLevel() * compGainFor(S.revTime), ctx.currentTime, 0.05);
+    }
+
+    /* ================================================================
+       IR Scrub: IR の時間窓を切り出して現在の入力に畳み込む
+       位置が動いたら非アクティブ側コンボルバに新スライスを載せて
+       30ms クロスフェードで切り替える (クリック防止)。
+       ================================================================ */
+    function updateIRSlice(force) {
+      if (!S.irBuf) return;
+      const winLen = S.winLen;
+      // 位置を量子化してから差し替える。毎周期 (25ms) コンボルバのバッファを差し替えると
+      // 畳み込み履歴がその都度リセットされ、クロスフェードが間に合わずプチプチ鳴るため、
+      // 移動量が窓の 1/4 (最低 15ms) 以上になるまで差し替えず、間隔も 70ms 以上空ける。
+      const step = Math.max(0.015, winLen * 0.25);
+      const pos = clamp(Math.round(clamp(S.revTime, 0, Math.max(0, S.irDur - winLen)) / step) * step,
+                        0, Math.max(0, S.irDur - winLen));
+      const key = pos.toFixed(3) + '/' + winLen.toFixed(3) + '/' + S.decayMode;
+      if (!force && key === irLastSliceKey) return;
+      if (!force && ctx.currentTime - irLastSwapAt < 0.07) return; // 次の周期で再試行される
+      irLastSliceKey = key;
+      irLastSwapAt = ctx.currentTime;
+      // スライスは IR 本来のサンプルレートで切り出す (読み込んだ MP3 等は 44.1kHz のことがあり、
+      // コンテキストのレートで数えると窓の位置と長さがずれる)。畳み込み時に自動でリサンプルされる。
+      const sr = S.irBuf.sampleRate, n = Math.max(16, Math.floor(winLen * sr));
+      const buf = ctx.createBuffer(2, n, sr);
+      let energy = 0;
+      for (let c = 0; c < 2; c++) {
+        const srcCh = S.irBuf.getChannelData(Math.min(c, S.irBuf.numberOfChannels - 1));
+        const dst = buf.getChannelData(c);
+        const start = Math.floor(pos * sr), fade = Math.min(Math.floor(0.005 * sr), n >> 2);
+        for (let i = 0; i < n; i++) {
+          let v = (start + i < srcCh.length) ? srcCh[start + i] : 0;
+          if (i < fade) v *= i / fade; else if (i > n - fade) v *= (n - i) / fade;
+          dst[i] = v; if (c === 0) energy += v * v;
+        }
+      }
+      let norm = 1;
+      if (S.decayMode === 'comp') {
+        // 音量補正: スライスの実測 RMS を基準レベルに寄せる
+        const rms = Math.sqrt(energy / n);
+        if (rms > 1e-4) norm = clamp(0.05 / rms, 0.3, 3.0);
+      }
+      const inact = irActiveIsA ? irConvB : irConvA;
+      const inactGain = irActiveIsA ? irGainB : irGainA;
+      const actGain = irActiveIsA ? irGainA : irGainB;
+      inact.buffer = buf;
+      const t = ctx.currentTime;
+      // ここでの目標はスライス自体のレベル (音量補正の norm) のみ。
+      // Mix/ソロは後段の irWetGain が担うため、Freeze 中でも Mix 変更が即反映される。
+      const target = (S.mode === 'ir') ? norm * irFullScale : 0;
+      inactGain.gain.cancelScheduledValues(t);
+      inactGain.gain.setTargetAtTime(target, t, 0.045);
+      actGain.gain.setTargetAtTime(0, t, 0.045);
+      irActiveIsA = !irActiveIsA;
+    }
+
+    /* ================================================================
+       Reverb Time 統合時計 (Source Time とは完全独立)
+       軸は方式ごとに定義する: IR Scrub では IR 全長 (切り出し窓が収まる
+       範囲 = IR 長 − 窓長)、それ以外は Wet 全長。シーク / ループ終端 /
+       逆行開始位置 / クランプはすべてこの軸に統一する。以前はシークと
+       ループ終端だけ Wet 長に追従し、クランプとスライスは IR 長で切って
+       いたため、IR モードでは軸の後半が無効になり逆行が途中で止まった。
+       ================================================================ */
+    function revAxisMax() {
+      return S.mode === 'ir' ? Math.max(0, S.irDur - S.winLen) : S.wetDur;
+    }
+    // Wet/Spec キャンバス上の「割合⇔秒」変換の分母の正本。
+    // IR モードでは参照位置は IR 時間軸の値なので、Wet 長で割ると
+    // マーカーが右端まで届かず、ドラッグの右半分が無反応になる。
+    function fracDur() {
+      return S.mode === 'ir' ? S.irDur : S.wetDur;
+    }
+    let axisMaxPrev = 0;
+    function syncTimeAxis() {
+      const mx = revAxisMax();
+      const wasFull = axisMaxPrev > 0 ? (S.loopB >= axisMaxPrev - 0.06) : (S.loopB <= 1.001 && S.loopA === 0);
+      if (wasFull || S.loopB > mx) S.loopB = mx;
+      S.loopA = clamp(S.loopA, 0, mx);
+      if (S.loopB < S.loopA) S.loopB = S.loopA;
+      S.revTime = clamp(S.revTime, 0, mx);
+      axisMaxPrev = mx;
+      updateRevUI();
+    }
+    /* ---- 正本のセッター: 参照位置・ループ・窓長はここを通してだけ変える ---- */
+    function setRevTime(tSec, opts) {
+      const jump = !opts || opts.jump !== false;
+      S.revTime = clamp(tSec, 0, Math.max(0, revAxisMax()));
+      if (jump) { S.specInitPos = -1; }
+      if (S.mode === 'ir') updateIRSlice(false);
+      updateRevUI();
+    }
+    function setLoopRange(a, b) {
+      const mx = Math.max(0, revAxisMax());
+      let lo = clamp(Math.min(a, b), 0, mx), hi = clamp(Math.max(a, b), 0, mx);
+      if (hi - lo < 0.02) hi = clamp(lo + 0.02, 0, mx);
+      S.loopA = lo; S.loopB = hi;
+      updateRevUI();
+    }
+    function setWinLen(sec) {
+      // 上限は IR 全長 (それ以上は窓として意味を持たない)。0.6s のような恣意的な上限は置かない。
+      // 下限 5ms は畳み込みスライスとして成立する最小限の実装上の制約。
+      S.winLen = clamp(sec, 0.005, Math.max(0.05, S.irDur || 0.6));
+      const el = document.querySelector('#winVal'); if (el) el.textContent = Math.round(S.winLen*1000);
+      S.revTime = clamp(S.revTime, 0, Math.max(0, revAxisMax()));
+      irLastSliceKey=''; if (S.mode==='ir') updateIRSlice(false); updateRevUI();
+    }
+    function advanceRevTime(dt) {
+      if (!S.revPlaying || S.freeze) return;
+      S.revTime += S.dir * S.speed * dt;
+      const hi = revAxisMax();
+      if (S.loopOn && hi > 0) {
+        const a = Math.min(S.loopA, S.loopB), b = Math.max(S.loopA, S.loopB), len = b - a;
+        if (len > 0.001) {
+          if (S.pingpong) {
+            if (S.revTime > b) { S.revTime = b - (S.revTime - b); S.dir = -Math.abs(S.dir); syncDirUI(); }
+            else if (S.revTime < a) { S.revTime = a + (a - S.revTime); S.dir = Math.abs(S.dir); syncDirUI(); }
+          } else if (S.revTime > b) {
+            // 順行ラップ: 超過分を区間長で割って区間内へ (全区間で機能させる)
+            S.revTime = a + ((S.revTime - a) % len);
+          } else if (S.revTime < a) {
+            // 逆行ラップ: 終端側から不足分を引く
+            S.revTime = b - ((a - S.revTime) % len);
+            if (S.revTime >= b) S.revTime = a;
+          }
+        }
+      } else {
+        // 端で自動停止したらボタン表示も同期する (revState は updateRevUI、
+        // ボタンは syncDirUI と表示の正本が分かれているため、ここで揃える)
+        if (S.revTime >= hi) { S.revTime = hi; if (S.dir > 0 && S.revPlaying) { S.revPlaying = false; syncDirUI(); } }
+        if (S.revTime <= 0) { S.revTime = 0; if (S.dir < 0 && S.revPlaying) { S.revPlaying = false; syncDirUI(); } }
+      }
+      S.revTime = clamp(S.revTime, 0, Math.max(hi, 0));
+    }
+    let lastTickAt = null;
+    setInterval(() => {
+      // dt は固定 0.025 ではなく AudioContext 時計の実経過から取る。
+      // 固定値だとバックグラウンドで setInterval が絞られた分だけ時計が遅れ、
+      // ctx.currentTime 基準の Source Time とドリフトする。
+      const now = ctx.currentTime;
+      const dt = ctx.state === 'running' && lastTickAt !== null ? Math.max(0, now - lastTickAt) : 0;
+      lastTickAt = ctx.state === 'running' ? now : null;
+      // 未初期化・停止中の時計を進めない。Spectral はチャンク生成側で進める。
+      if (S.mode !== 'spectral' && dt > 0 && revAxisMax() > 0) advanceRevTime(dt);
+      updateRevUI();
+      if (S.mode === 'ir') updateIRSlice(false);
+    }, 25);
+
+    function updateRevUI() {
+      const t = S.revTime;
+      $('#revTimeBig').textContent = t.toFixed(2) + ' s';
+      $('#wetPos').textContent = t.toFixed(2) + ' s';
+      // 波形キャンバス (role=slider) の ARIA を正本に同期
+      for (const id of ['#wetWave','#spec','#irWave']) { const c=$(id); if(c){ c.setAttribute('aria-valuemax', revAxisMax().toFixed(2)); c.setAttribute('aria-valuenow', t.toFixed(2)); c.setAttribute('aria-valuetext', t.toFixed(2)+' s'); } }
+      $('#revState').textContent = S.freeze ? '固定中 (Freeze)' :
+        !S.revPlaying ? '停止中' : (S.dir > 0 ? '順行中' : '逆行中') + ' ' + S.speed.toFixed(2) + '×';
+      // マーカー類 (Wet/Spec は現在の方式の時間軸 fracDur が分母)
+      const fd = fracDur();
+      const pctWet = fd > 0 ? (t / fd * 100) : 0;
+      for (const id of ['#wetMark', '#specMark']) {
+        const el = $(id); el.style.display = 'block'; el.style.left = pctWet + '%';
+      }
+      const irEl = $('#irMark'); irEl.style.display = 'block';
+      irEl.style.left = (S.irDur > 0 ? t / S.irDur * 100 : 0) + '%';
+      const win = $('#irWin');
+      if (S.irDur > 0) {
+        win.style.display = 'block';
+        win.style.left = (clamp(t, 0, Math.max(0, S.irDur - S.winLen)) / S.irDur * 100) + '%';
+        win.style.width = (S.winLen / S.irDur * 100) + '%';
+      }
+      // Source playhead (停止中は次回再生開始位置を表示し続ける)
+      const st = currentSrcPos();
+      $('#srcTime').textContent = st.toFixed(2) + ' / ' + S.srcDur.toFixed(2) + ' s';
+      const h = $('#srcHead');
+      if (S.srcDur > 0) { h.style.display = 'block'; h.style.left = (st / S.srcDur * 100) + '%'; }
+      else h.style.display = 'none';
+      const sc = $('#srcWave'); if (sc) { sc.setAttribute('aria-valuemax', S.srcDur.toFixed(2)); sc.setAttribute('aria-valuenow', st.toFixed(2)); sc.setAttribute('aria-valuetext', st.toFixed(2)+' / '+S.srcDur.toFixed(2)+' s'); }
+      // ループ区間オーバーレイ (Wet / Spec とも現在の時間軸 fracDur が分母)
+      for (const id of ['#wetLoop', '#specLoop']) {
+        const el = $(id); if (!el) continue;
+        if (S.loopOn && fd > 0) { el.style.display='block'; el.style.left=(Math.min(S.loopA,S.loopB)/fd*100)+'%'; el.style.width=(Math.abs(S.loopB-S.loopA)/fd*100)+'%'; }
+        else el.style.display='none';
+      }
+      const la=$('#loopAVal'), lb=$('#loopBVal'); if(la) la.textContent=Math.min(S.loopA,S.loopB).toFixed(2); if(lb) lb.textContent=Math.max(S.loopA,S.loopB).toFixed(2);
+    }
+    function syncDirUI() {
+      $('#dirFwd').classList.toggle('on', S.dir > 0);
+      $('#dirRev').classList.toggle('on', S.dir < 0);
+      $('#revPlayBtn').classList.toggle('on', S.revPlaying && !S.freeze);
+      $('#freezeBtn').classList.toggle('on', S.freeze);
+      $('#revPlayBtn').textContent = S.revPlaying ? '⏸ 進行を止める' : '▶ 進行';
+    }
+
+    /* ================================================================
+       モード切替
+       ================================================================ */
+    const MODES = [
+      { id: 'dry', name: 'Dry', desc: '原音のみ。基準。', kind: 'live',
+        note: '<b>Dry:</b> 原音をそのまま出力します。Wet 側との比較基準です。' },
+      { id: 'normal', name: 'Normal Reverb', desc: '通常の畳み込みリバーブ', kind: 'live',
+        note: '<b>Normal Reverb:</b> 現在の入力に IR 全体を畳み込む通常のリバーブ。Reverb Time の操作対象ではありません（比較基準）。' },
+      { id: 'buffer', name: 'Buffer Scrub', desc: 'Wet 波形の読み取り位置を操作', kind: 'cache',
+        note: '<b>Buffer Scrub（波形操作）:</b> 事前生成した Wet キャッシュを 140ms の粒（グラニュラー）で読み取ります。粒の位置は WSOLA 式の波形類似度探索（前回粒の続きとの正規化相関 − 距離ペナルティ）で微調整し、粒境界の位相不連続によるプチ音を抑えます。順行・逆行・速度変更・固定に対応。逆行時は反転バッファを使うため波形自体が逆再生されます。<b>制約:</b> 粒は等速再生のため、速度を変えてもピッチは変わりません（タイムストレッチ型の読み取り）。固定時は同位置付近の粒の重なりで持続音になります。入力の変更にはキャッシュ再生成が必要です。' },
+      { id: 'spectral', name: 'Spectral Scrub', desc: 'Wet の周波数成分を再合成', kind: 'cache',
+        note: '<b>Spectral Scrub（スペクトル再合成）:</b> Wet を STFT（2048点 / ホップ512）で分解し、参照位置の振幅スペクトルを補間しながら位相を真の瞬時周波数で前進させて再合成します（フェーズボコーダ方式：位相は毎ホップ折り返して蓄積し、OLA は Σw² で正規化）。固定してもその時点の周波数構成が持続し、速度・方向を変えてもピッチは変化しません。<b>制約:</b> 過渡（アタック）は時間分解能の分だけ鈍ります。再合成はモノラル解析を基にしています。入力の変更にはキャッシュ再生成が必要です。' },
+      { id: 'ir', name: 'IR Scrub', desc: 'IR の時間窓を現在の入力へ適用', kind: 'live',
+        note: '<b>IR Scrub（部分畳み込み）:</b> IR の参照位置から「切り出し長」分の窓を抽出し、<u>現在の入力</u>に畳み込みます。参照位置を固定・逆行させても入力音は通常方向に進行し、音源の差し替えや周波数変更にも即追従します（入力キャッシュ不要）。この方式の Reverb Time の軸は IR 全長（切り出し窓が収まる範囲）で、シーク・ループ・逆行はすべて IR の末尾から先頭まで全区間が対象です。<b>制約:</b> 窓の差し替えはデュアルコンボルバのクロスフェードで行うため、移動中は約30msの遷移を伴います。窓が短いと残響というより共鳴フィルタに近い音になります。' },
+    ];
+    function setMode(id) {
+      S.mode = id;
+      syncTimeAxis(); // 方式ごとの軸 (Wet 長 / IR 長) にシーク・ループ・位置を合わせる
+      document.querySelectorAll('#modeGrid button').forEach(b => b.classList.toggle('on', b.dataset.mode === id));
+      // A/B トグルの有効表示も現在の方式に同期する (状態表示の二重化防止)
+      $('#abToggleA').classList.toggle('on', id === $('#abA').value);
+      $('#abToggleB').classList.toggle('on', id === $('#abB').value);
+      $('#modeNote').innerHTML = MODES.find(m => m.id === id).note;
+      if (id === 'ir') { irLastSliceKey = ''; updateIRSlice(true); }
+      else { const t = ctx.currentTime; irGainA.gain.setTargetAtTime(0, t, 0.04); irGainB.gain.setTargetAtTime(0, t, 0.04); }
+      applyMix(); // Mix/ソロのゲインは単一の正本 applyMix に集約 (ここでは個別に触らない)
+      // エンジン開始/停止
+      clearInterval(grainTimer); clearInterval(specTimer);
+      if (id === 'buffer') { nextGrainTime = ctx.currentTime + 0.05; grainTimer = setInterval(grainLoop, 40); grainLoop(); }
+      if (id === 'spectral') { S.specInitPos = -1; nextSpecTime = ctx.currentTime + 0.05; specTimer = setInterval(specLoop, 110); specLoop(); }
+    }
+    function mixVal() { return parseFloat($('#mix').value) / 100; }
+    // Mix の正本: Dry = 1 − m、Wet = m の線形。端点では相手側が完全に 0 になる
+    // (以前は Dry に 1 − 0.7m の勝手なカーブがあり Wet 100% でも Dry が 0.3 残っていた)。
+    // ソロはその上位のゲートとして働く。
+    function dryLevel() { return S.solo === 'wet' ? 0 : S.mode === 'dry' ? 1 : 1 - mixVal(); }
+    function wetLevel() { return S.solo === 'dry' ? 0 : mixVal(); }
+    function applyMix() {
+      // Mix/ソロのゲイン設定はここが単一の正本 (モード側で個別に触らない)。
+      // Buffer/Spectral の有効レベルは各エンジンループが wetLevel() を毎周期適用する。
+      const tt = ctx.currentTime, tc = 0.04;
+      dryGain.gain.setTargetAtTime(dryLevel(), tt, tc);
+      normalGain.gain.setTargetAtTime(S.mode === 'normal' ? wetLevel() : 0, tt, tc);
+      irWetGain.gain.setTargetAtTime(S.mode === 'ir' ? wetLevel() : 0, tt, tc);
+      if (S.mode !== 'buffer') bufferGain.gain.setTargetAtTime(0, tt, tc);
+      if (S.mode !== 'spectral') specGain.gain.setTargetAtTime(0, tt, tc);
+      if (S.mode !== 'ir') { irGainA.gain.setTargetAtTime(0, tt, tc); irGainB.gain.setTargetAtTime(0, tt, tc); }
+    }
+
+    /* ================================================================
+       可視化: 波形 / スペクトログラム / 出力スペクトル
+       ================================================================ */
+    function drawWave(canvas, buf) {
+      if (!canvas || !buf) return;
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const w = Math.max(1, Math.round(canvas.clientWidth * dpr)), h = Math.max(1, Math.round(canvas.clientHeight * dpr));
+      if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+      const g = canvas.getContext('2d');
+      g.clearRect(0, 0, w, h);
+      const L = buf.getChannelData(0), R = buf.numberOfChannels > 1 ? buf.getChannelData(1) : L;
+      const mid = h / 2;
+      g.strokeStyle = cssVar('--line'); g.beginPath(); g.moveTo(0, mid); g.lineTo(w, mid); g.stroke();
+      g.fillStyle = cssVar('--wave');
+      const spp = buf.length / w;
+      for (let x = 0; x < w; x++) {
+        let mn = 1, mx = -1;
+        const s0 = Math.floor(x * spp), s1 = Math.max(s0 + 1, Math.floor((x + 1) * spp));
+        for (let i = s0; i < s1; i += Math.max(1, Math.floor(spp / 24))) {
+          const v = (L[i] + R[i]) * 0.5; if (v < mn) mn = v; if (v > mx) mx = v;
+        }
+        g.fillRect(x, mid - mx * mid * 0.95, 1, Math.max(1, (mx - mn) * mid * 0.95));
+      }
+    }
+    function drawSpectrogram() {
+      const canvas = $('#spec'); if (!S.stft || !S.wetBuf) return;
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const w = canvas.clientWidth * dpr, h = canvas.clientHeight * dpr;
+      canvas.width = w; canvas.height = h;
+      const g = canvas.getContext('2d');
+      const st = S.stft, frames = st.frames;
+      // 最大値で正規化 (対数表示)
+      let maxMag = 0; for (let i = 0; i < st.mag.length; i += 7) if (st.mag[i] > maxMag) maxMag = st.mag[i];
+      if (maxMag <= 0) return;
+      const img = g.createImageData(w, h);
+      const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      for (let x = 0; x < w; x++) {
+        const f = Math.floor(x / w * frames);
+        for (let y = 0; y < h; y++) {
+          // 対数周波数: 下端 30Hz 〜 Nyquist
+          const frac = 1 - y / h;
+          const freq = 30 * Math.pow((SR / 2) / 30, frac);
+          const k = clamp(Math.round(freq / (SR / FFT_SIZE)), 1, BINS - 1);
+          const m = st.mag[f * BINS + k] / maxMag;
+          const db = 20 * Math.log10(m + 1e-6); // -120..0
+          const v = clamp((db + 78) / 78, 0, 1);
+          const idx = (y * w + x) * 4;
+          // 単色系ヒートマップ (teal -> white)
+          img.data[idx] = Math.floor(lerp(8, 235, Math.pow(v, 1.6)));
+          img.data[idx + 1] = Math.floor(lerp(18, 245, Math.pow(v, 1.15)));
+          img.data[idx + 2] = Math.floor(lerp(24, 225, v * v));
+          img.data[idx + 3] = 255;
+        }
+      }
+      g.putImageData(img, 0, 0);
+    }
+    const outData = new Uint8Array(analyser.frequencyBinCount);
+    function drawOutSpec() {
+      const canvas = $('#outSpec');
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const w = Math.max(1, Math.round(canvas.clientWidth * dpr)), h = Math.max(1, Math.round(canvas.clientHeight * dpr));
+      if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+      const g = canvas.getContext('2d');
+      g.clearRect(0, 0, w, h);
+      analyser.getByteFrequencyData(outData);
+      g.fillStyle = cssVar('--wave');
+      const minF = 20, maxF = 20000;
+      for (let x = 0; x < w; x += 3) {
+        const frac = x / w;
+        const freq = minF * Math.pow(maxF / minF, frac);
+        const bin = clamp(Math.round(freq / (SR / analyser.fftSize)), 0, outData.length - 1);
+        const v = outData[bin] / 255;
+        g.fillRect(x, h - v * h, 2, v * h);
+      }
+      g.fillStyle = cssVar('--ink-dim'); g.font = `${11 * dpr}px sans-serif`;
+      for (const f of [50, 100, 500, 1000, 5000, 10000]) {
+        const x = Math.log(f / minF) / Math.log(maxF / minF) * w;
+        g.fillText(f >= 1000 ? (f / 1000) + 'k' : '' + f, x + 2, 12 * dpr);
+      }
+      requestAnimationFrame(drawOutSpec);
+    }
+
+    /* 波形上の直接操作が唯一の操作系。
+       - Source波形: ヘッドを掴んで seekSource へ (正本は S.srcPos + 再生時計)
+       - Wet/Spec: マーカーを掴んで setRevTime へ。ループ有効時は Wet 上で
+         端=リサイズ / 区間内=全体移動 も同じポインタ処理の中で判定する
+       - IR波形: 窓内=窓移動(setRevTime) / 右端=窓長変更(setWinLen)
+       キーボードは同じセッターを通す微調整のみ (別UIは作らない)。 */
+    function fracOf(canvas, e) { const r = canvas.getBoundingClientRect(); return clamp((e.clientX - r.left) / r.width, 0, 1); }
+    function attachPointer(canvas, handlers) {
+      let mode = null, grab = 0;
+      canvas.addEventListener('pointerdown', e => { const f = fracOf(canvas, e); const h = handlers.down(f, e); if (!h) return; mode = h.mode; grab = h.grab || 0; canvas.setPointerCapture(e.pointerId); handlers.move(f, mode, grab); });
+      canvas.addEventListener('pointermove', e => { if (mode) handlers.move(fracOf(canvas, e), mode, grab); });
+      const end = () => { mode = null; };
+      canvas.addEventListener('pointerup', end); canvas.addEventListener('pointercancel', end);
+    }
+    function attachKeys(canvas, onStep) {
+      canvas.addEventListener('keydown', e => {
+        const big = e.shiftKey ? 10 : 1;
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { onStep(-big); e.preventDefault(); }
+        else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') { onStep(big); e.preventDefault(); }
+        else if (e.key === 'Home') { onStep('home'); e.preventDefault(); }
+        else if (e.key === 'End') { onStep('end'); e.preventDefault(); }
+      });
+    }
+
+    /* ================================================================
+       UI 配線
+       ================================================================ */
+    function buildUI() {
+      // 音源ボタン
+      const grid = $('#srcGrid');
+      for (const def of SRC_DEFS) {
+        const b = document.createElement('button');
+        b.dataset.src = def.id;
+        b.innerHTML = def.name + '<small>' + def.sub + '</small>';
+        b.addEventListener('click', () => selectSource(def.id));
+        grid.appendChild(b);
+      }
+      // モードボタン
+      const mg = $('#modeGrid');
+      for (const m of MODES) {
+        const b = document.createElement('button');
+        b.dataset.mode = m.id;
+        b.innerHTML = '<b>' + m.name + '</b><small>' + m.desc + '</small>' +
+          '<span class="badge ' + (m.kind === 'cache' ? 'cache' : 'live') + '">' +
+          (m.kind === 'cache' ? '要キャッシュ' : 'ライブ追従') + '</span>';
+        b.addEventListener('click', () => setMode(m.id));
+        mg.appendChild(b);
+      }
+      // A/B セレクト
+      for (const sel of ['#abA', '#abB']) {
+        const s = $(sel);
+        for (const m of MODES) { const o = document.createElement('option'); o.value = m.id; o.textContent = m.name; s.appendChild(o); }
+      }
+      $('#abA').value = 'buffer'; $('#abB').value = 'spectral';
+      $('#abToggleA').addEventListener('click', () => setMode($('#abA').value));
+      $('#abToggleB').addEventListener('click', () => setMode($('#abB').value));
+      // ソロ
+      $('#soloSeg').addEventListener('click', e => {
+        const b = e.target.closest('button'); if (!b) return;
+        S.solo = b.dataset.solo;
+        document.querySelectorAll('#soloSeg button').forEach(x => x.classList.toggle('on', x === b));
+        applyMix(); // IR の Mix/ソロは irWetGain が担うため、差し替えなしで即反映される
+      });
+      // 減衰モード
+      $('#decaySeg').addEventListener('click', e => {
+        const b = e.target.closest('button'); if (!b) return;
+        S.decayMode = b.dataset.decay;
+        document.querySelectorAll('#decaySeg button').forEach(x => x.classList.toggle('on', x === b));
+        irLastSliceKey = ''; updateIRSlice(true);
+      });
+    }
+
+    async function selectSource(id) {
+      S.srcId = id;
+      document.querySelectorAll('#srcGrid button').forEach(b => b.classList.toggle('on', b.dataset.src === id));
+      const def = SRC_DEFS.find(d => d.id === id);
+      S.srcBuf = genSource(id);
+      S.srcName = def.name; S.srcDur = S.srcBuf.duration;
+      S.srcPos = 0;
+      $('#freqCtl').style.opacity = def.osc ? '1' : '0.45';
+      $('#freq').disabled = !def.osc; // 表示 (減光) と挙動 (無効) を一致させる
+      drawWave($('#srcWave'), S.srcBuf);
+      if (S.playing) startSource(); // 再生中なら新音源で再開
+      await rebuildWet();
+    }
+
+    let freqTimer = null;
+    function wireControls() {
+      const resume = () => { if (ctx.state === 'suspended') ctx.resume(); };
+      document.addEventListener('pointerdown', resume, { once: false });
+      $('#playBtn').addEventListener('click', () => { resume(); startSource(); });
+      $('#stopBtn').addEventListener('click', stopSource);
+      $('#srcLoop').addEventListener('change', e => { if (srcNode) srcNode.loop = e.target.checked; });
+      $('#freq').addEventListener('input', e => {
+        S.freq = parseFloat(e.target.value); $('#freqVal').textContent = S.freq;
+        const def = SRC_DEFS.find(d => d.id === S.srcId);
+        if (def && def.osc) { clearTimeout(freqTimer); freqTimer = setTimeout(() => selectSource(S.srcId), 180); }
+      });
+      $('#srcFile').addEventListener('change', async e => {
+        const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+        try {
+          resume();
+          setStatus('ファイルをデコード中…: ' + f.name);
+          const decoded = await decodeAudioFile(f);
+          const buf = decoded; // 全長をそのまま使う (切り捨てなし)
+          S.srcId = 'file';
+          document.querySelectorAll('#srcGrid button').forEach(b => b.classList.toggle('on', false));
+          $('#freqCtl').style.opacity = '0.45'; // ファイル音源では発振周波数は無効 (E3 の明示と一致させる)
+          $('#freq').disabled = true;
+          S.srcBuf = buf; S.srcName = 'ファイル: ' + f.name; S.srcDur = buf.duration;
+          S.srcPos = 0;
+          drawWave($('#srcWave'), buf);
+          if (S.playing) startSource();
+          await rebuildWet();
+          setStatus('読み込み完了: ' + f.name + '（' + buf.duration.toFixed(2) + ' s / ' +
+            buf.numberOfChannels + ' ch / ' + Math.round(buf.sampleRate) + ' Hz）');
+        } catch (err) { setStatus('音声ファイルの読み込みに失敗: ' + (err && err.message ? err.message : 'デコードできませんでした。MP3 / WAV / M4A 等の音声ファイルか確認してください'), true); }
+      });
+      $('#irFile').addEventListener('change', async e => {
+        const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+        try {
+          resume();
+          setStatus('IR ファイルをデコード中…: ' + f.name);
+          const decoded = await decodeAudioFile(f);
+          const buf = decoded; // IR も全長をそのまま使う (切り捨てなし)
+          S.irCustomBuf = buf;
+          $('#irType').value = 'custom';
+          genIR(); await rebuildWet();
+          setStatus('IR ファイルを読み込みました: ' + f.name + '（' + buf.duration.toFixed(2) + ' s）');
+        } catch (err) { setStatus('IR ファイルの読み込みに失敗: ' + (err && err.message ? err.message : 'デコードできませんでした'), true); }
+      });
+      // Reverb Time 操作 (位置の正本は波形上のマーカー。ここは進行制御のみ)
+      $('#toStart').addEventListener('click', () => setRevTime(0));
+      $('#freezeBtn').addEventListener('click', () => { S.freeze = !S.freeze; syncDirUI(); updateRevUI(); });
+      $('#revPlayBtn').addEventListener('click', () => { S.revPlaying = !S.revPlaying; if (S.revPlaying) S.freeze = false; syncDirUI(); updateRevUI(); });
+      $('#dirFwd').addEventListener('click', () => {
+        S.dir = 1; S.revPlaying = true; S.freeze = false;
+        const hi = revAxisMax();
+        const end = S.loopOn ? Math.max(S.loopA, S.loopB) : hi;
+        const start = S.loopOn ? Math.min(S.loopA, S.loopB) : 0;
+        if (S.revTime >= end - 0.05) { setRevTime(start); S.specLastPos = null; }
+        syncDirUI(); updateRevUI();
+      });
+      $('#dirRev').addEventListener('click', () => {
+        S.dir = -1; S.revPlaying = true; S.freeze = false;
+        // 位置が区間先頭にあるまま逆行すると即座に 0 で止まるため、終端へ移して全区間を逆行させる
+        const hi = revAxisMax();
+        const end = S.loopOn ? Math.max(S.loopA, S.loopB) : hi;
+        const start = S.loopOn ? Math.min(S.loopA, S.loopB) : 0;
+        if (S.revTime <= start + 0.05) { setRevTime(end); S.specLastPos = null; }
+        syncDirUI(); updateRevUI();
+      });
+      $('#speed').addEventListener('input', e => { S.speed = parseFloat(e.target.value); $('#speedVal').textContent = S.speed.toFixed(2); });
+      $('#loopOn').addEventListener('change', e => { S.loopOn = e.target.checked; updateRevUI(); });
+      $('#pingpong').addEventListener('change', e => { S.pingpong = e.target.checked; updateRevUI(); });
+      // リバーブ共通設定
+      const regenIR = async () => { genIR(); await rebuildWet(); };
+      $('#irType').addEventListener('change', regenIR);
+      let irTimer = null;
+      const regenIRD = () => { clearTimeout(irTimer); irTimer = setTimeout(regenIR, 220); };
+      $('#rt').addEventListener('input', e => { $('#rtVal').textContent = parseFloat(e.target.value).toFixed(1); regenIRD(); });
+      $('#pd').addEventListener('input', e => { $('#pdVal').textContent = e.target.value; regenIRD(); });
+      $('#mix').addEventListener('input', e => { $('#mixVal').textContent = e.target.value; applyMix(); });
+      $('#vol').addEventListener('input', e => { $('#volVal').textContent = e.target.value; master.gain.setTargetAtTime(parseFloat(e.target.value) / 100, ctx.currentTime, 0.03); });
+      // 可視化ドラッグ = 唯一の位置操作系 (全て正本セッター経由。
+      // 割合⇔秒の変換は fracDur() に統一し、IR モードでも全幅が操作に効く)
+      const revFromWetFrac = f => setRevTime(f * fracDur());
+      const wetPointer = {
+        down(f) {
+          if (!fracDur()) return null;
+          if (S.loopOn) {
+            const tSec = f * fracDur(), a = Math.min(S.loopA,S.loopB), b = Math.max(S.loopA,S.loopB), edge = 0.25;
+            if (Math.abs(tSec - a) <= edge) return { mode: 'loopA' };
+            if (Math.abs(tSec - b) <= edge) return { mode: 'loopB' };
+            if (tSec > a && tSec < b) return { mode: 'loopMove', grab: tSec - a };
+          }
+          return { mode: 'rev' };
+        },
+        move(f, mode, grab) {
+          if (!fracDur()) return;
+          const tSec = f * fracDur();
+          if (mode === 'loopA') setLoopRange(tSec, Math.max(S.loopA,S.loopB));
+          else if (mode === 'loopB') setLoopRange(Math.min(S.loopA,S.loopB), tSec);
+          else if (mode === 'loopMove') { const len = Math.abs(S.loopB-S.loopA); const na = clamp(tSec - grab, 0, Math.max(0, revAxisMax()-len)); setLoopRange(na, na+len); }
+          else revFromWetFrac(f);
+        }
+      };
+      attachPointer($('#wetWave'), wetPointer);
+      attachPointer($('#spec'), { down: () => ({ mode: 'rev' }), move: f => { if (fracDur()) revFromWetFrac(f); } });
+      attachPointer($('#irWave'), {
+        down(f) {
+          if (!S.irDur) return null;
+          const tSec = f * S.irDur, winEnd = clamp(S.revTime,0,Math.max(0,S.irDur-S.winLen)) + S.winLen;
+          if (Math.abs(tSec - winEnd) <= 0.18) return { mode: 'winResize' };
+          if (tSec >= S.revTime && tSec <= winEnd) return { mode: 'winMove', grab: tSec - S.revTime };
+          return { mode: 'winJump', grab: 0 };
+        },
+        move(f, mode, grab) {
+          if (!S.irDur) return;
+          const tSec = f * S.irDur;
+          if (mode === 'winResize') setWinLen(tSec - clamp(S.revTime,0,Math.max(0,S.irDur-0.01)));
+          else setRevTime(tSec - (grab||0));
+        }
+      });
+      attachPointer($('#srcWave'), { down: () => ({ mode: 'src' }), move: f => { if (S.srcDur) seekSource(f * S.srcDur); } });
+      attachKeys($('#srcWave'), s => { if (!S.srcDur) return; if (s==='home') seekSource(0); else if (s==='end') seekSource(S.srcDur-0.01); else seekSource(currentSrcPos() + s*0.1); });
+      const revKey = s => { const mx = revAxisMax(); if (s==='home') setRevTime(0); else if (s==='end') setRevTime(mx); else setRevTime(S.revTime + s*0.05); };
+      attachKeys($('#wetWave'), revKey); attachKeys($('#spec'), revKey); attachKeys($('#irWave'), revKey);
+      window.addEventListener('resize', () => {
+        drawWave($('#srcWave'), S.srcBuf); drawWave($('#wetWave'), S.wetBuf); drawWave($('#irWave'), S.irBuf); drawSpectrogram();
+      });
+    }
+
+    /* ================================================================
+       初期化
+       ================================================================ */
+    (async function init() {
+      buildUI();
+      wireControls();
+      genIR();
+      await selectSource('clicks');
+      setMode('normal');
+      syncDirUI();
+      updateRevUI();
+      requestAnimationFrame(drawOutSpec);
+    })();
+    </script>
+  </body>
+</html>

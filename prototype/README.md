@@ -1,6 +1,6 @@
 # プロトタイプ: Reverb Time Scrubber
 
-`index.html` は、Muse 上で先行して作られた実験サイト「Reverb Time Scrubber」の現状スナップショットを、単一HTMLファイルとしてそのまま保存したものである。本リポジトリ（reverb-time-remapping）の正式実装ではなく、**プロトタイプ**として置く。
+`index.html` は、Muse 上で先行して作られた実験サイト「Reverb Time Scrubber」の現状スナップショットを、単一HTMLファイルとして保存し、収録時に比較試聴の3件の不具合を局所修正したものである。本リポジトリ（reverb-time-remapping）の正式実装ではなく、**プロトタイプ**として置く。
 
 - 対応仕様: 本リポジトリ `docs/SPECIFICATION.md` の前身である初期実験仕様（5モード比較版）
 - 開き方: `index.html` をブラウザで開くだけで動作する（外部ファイル・サーバー不要）
@@ -19,3 +19,7 @@
 - ピッチ不変（Spectral）の数値実測、Freeze 持続音の継ぎ目、モード切替直後の過渡、サンプルレート混在時の挙動は未検証
 - iOS Safari 実機での MP3 読み込みとタッチドラッグ操作は未検証
 - 本プロトタイプは SPECIFICATION.md の8モード構成（Reverse Convolution、IR Spectral Remapping、Integrated Remapping 等）には未対応で、時間軸も Source／Reverb の2軸まで（IR Time／Wet Time／Output Time の分離は今後の正式実装で扱う）
+
+## 収録時の修正
+
+Muse原版: `48343dfa54013f585454a55127b32e07ddc840e7`。PR #3のCodex指摘に対応し、AudioContext停止中の残響時計・キャッシュ生成側の進行を停止、IR部分窓の個別正規化を全IR共通の校正係数に置換、Dry基準音のゲインをWet/Dry比から独立（明示Wetソロは維持）。正式8モード仕様の実装は含まない。

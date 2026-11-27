@@ -21,16 +21,17 @@ test("finite IR spectral kernel really reaches native convolution in Chrome",asy
       const ir={sampleRate:sr,channels:[channel,channel.map(v=>-v)]};
       const input={sampleRate:sr,channels:[Float32Array.of(1)]};
       const results=[];
-      for(const speed of [1,0,-1,.5]){
+      for(const [speed,boundary] of [[1,"zero"],[0,"zero"],[-1,"zero"],[.5,"zero"],[-1,"pingpong"]]){
         const {kernel,wet}=await renderSpectralWet(input,ir,
-          {startFrame:speed===1?0:8000,speed,outputFrames:4096},{delay:-48});
+          {startFrame:speed===1?0:8000,speed,outputFrames:4096,boundary,
+            ...(boundary==="pingpong"?{loopStartFrame:7900,loopEndFrame:8101}:{})},{delay:-48});
         let error=0,peak=0,dc=0;
         for(let i=0;i<4096;i++){
           error=Math.max(error,Math.abs(kernel.channels[0][i]-wet.channels[0][i]),
             Math.abs(kernel.channels[1][i]-wet.channels[1][i]));
           peak=Math.max(peak,Math.abs(wet.channels[0][i]));dc+=wet.channels[0][i];
         }
-        results.push({speed,error,peak,dc:dc/4096,origin:wet.origin,algorithm:kernel.trajectory.algorithm});
+        results.push({speed,boundary,error,peak,dc:dc/4096,origin:wet.origin,algorithm:kernel.trajectory.algorithm});
       }
       return results;
     });

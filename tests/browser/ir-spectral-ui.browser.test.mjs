@@ -82,6 +82,16 @@ test("IR Spectral actual UI renders kernels in a Worker, retains output and appl
     await page.click("#pause");await enabled();
     await page.click('[data-mode="normal"]');await enabled();await page.click('[data-mode="ir-spectral"]');await enabled();
     assert.match(await page.$eval("#ir-spectral-applied",el=>el.textContent),/0.000 ms \/ 0×/);
+    await page.$eval("#ir-spectral-range-end",el=>{el.value="10";el.dispatchEvent(new Event("change"));});
+    await page.waitForFunction(()=>document.querySelector("#status").textContent.includes("IR再合成を適用")&&!document.querySelector("#play").disabled);
+    await page.select("#ir-spectral-boundary","pingpong");
+    await page.waitForFunction(()=>document.querySelector("#ir-spectral-applied").textContent.includes("pingpong")&&!document.querySelector("#play").disabled);
+    await page.$eval("#ir-spectral-speed",el=>{el.value="-1";el.dispatchEvent(new Event("change"));});
+    await page.waitForFunction(()=>document.querySelector("#ir-spectral-applied").textContent.includes("0.000 ms / -1×")&&!document.querySelector("#play").disabled);
+    assert.match(await page.$eval("#ir-spectral-applied",el=>el.textContent),/pingpong/);
+    await page.$eval("#seek",el=>{el.value="16000";el.dispatchEvent(new Event("input"));el.dispatchEvent(new Event("change"));});await enabled();
+    await page.click("#play");await enabled();await audible();
+    await page.click("#pause");await enabled();
     assert.deepEqual(errors,[]);
   }finally{await cleanupTestProcesses(browser,[server]);}
 });

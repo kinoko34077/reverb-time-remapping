@@ -1,15 +1,31 @@
 import {makeSource,makeIR,readLocalWav} from "../src/materials.mjs";
 import {prepareComparison} from "../src/comparison-session.mjs";
 import {createPreviewPlayer} from "../src/preview-player.mjs";
+import {isScrubMode} from "../src/scrub-pair.mjs";
 import {createWetMixBinding,mountWetMixField} from "../src/wet-mix.mjs";
 const $=id=>document.getElementById(id);
 let ctx,player,session,mode="dry",appliedMode="dry",busy=false,seeking=false,sourceFile=null,irFile=null;
 const status=$("status"),seek=$("seek");
+let savedAxes={};const dragging=new Set();
+function showAxes(axes){
+  if(!axes||!session)return;
+  for(const name of ["source","wet"]){
+    const axis=axes[name];if(!axis)continue;
+    savedAxes[name]={frame:Math.round(axis.frame),speed:axis.speed,repeat:axis.repeat};
+    if(!dragging.has(name)){
+      $(name+"-seek").value=String(Math.round(axis.frame));
+      $(name+"-position").textContent=((session.interval.start+axis.frame)/session.sampleRate).toFixed(3)+" s";
+    }
+  }
+}
 function message(s){status.textContent=s;}
 function controls(){
   for(const id of ["source","source-file","ir","ir-file","frequency","ir-length","predelay","ir-window-start","ir-window-length","prepare","wet","solo"])$(id).disabled=busy;
   for(const b of document.querySelectorAll("[data-mode]")){b.disabled=busy||!session;b.setAttribute("aria-pressed",String(b.dataset.mode===appliedMode));}
   for(const id of ["play","pause","stop","seek","apply-mix"])$(id).disabled=busy||!session;
+  $("scrub-axes").hidden=!isScrubMode(appliedMode);
+  for(const name of ["source","wet"])for(const suffix of ["seek","speed","repeat"])
+    $(name+"-"+suffix).disabled=busy||!session||!isScrubMode(appliedMode);
 }
 function show(frame){
   if(!session)return;
@@ -24,7 +40,7 @@ async function run(fn){
 async function audio(){
   if(!ctx){ctx=new AudioContext();player=createPreviewPlayer(ctx,{onState:s=>{
     if(s.error){message("再生エラー: "+s.error);return;}
-    show(s.position);
+    show(s.position);showAxes(s.axes);
     if(s.event?.type==="render-applied"&&s.event.missingFramesInBlock===0)
       status.dataset.renderApplied=String(s.event.requestId);
     if(s.event?.type==="progress")status.dataset.renderedFrames=String(s.event.renderedFrames);
@@ -33,10 +49,19 @@ async function audio(){
 }
 const binding=createWetMixBinding();
 mountWetMixField({field:$("wet"),binding,onChanged:()=>{message("Wet設定変更・未反映。Wet設定を反映、または方式を切り替えてください。");}});
+async function loadMode(target,next,options={}){
+  if(isScrubMode(next)){
+    const positions=options.reset?{}:{...savedAxes,
+      source:{...savedAxes.source,frame:Math.round(player.state.position)}};
+    await player.load(target.signals.dry,target.gain.applied,{...options,
+      scrub:{wet:target.signals.normal,mode:next,mix:binding.value,solo:$("solo").value},positions});
+  }else await player.load(target.select(next,binding.value,$("solo").value),target.gain.applied,options);
+}
 async function choose(next){
   if(!session)return;
   await audio();
-  await player.load(session.select(next,binding.value,$("solo").value),session.gain.applied);
+  if(next!==mode||!isScrubMode(next)||!player.setMix(binding.value,$("solo").value))await loadMode(session,next);
+  if(isScrubMode(next))showAxes(player.state.axes);
   mode=appliedMode=next;
   message("適用: "+mode+" / Wet "+(binding.value*100).toFixed(3)+"%");
   show(player.state.position);
@@ -49,8 +74,10 @@ $("prepare").onclick=()=>run(async()=>{
   const readNumber=id=>{const raw=$(id).value;if(!raw.trim()||!Number.isFinite(Number(raw)))throw Error("数値を入力してください: "+id);return Number(raw);};
   const next=await prepareComparison(source,ir,{predelay:readNumber("predelay")/1000,
     irWindow:{start:readNumber("ir-window-start")/1000,duration:readNumber("ir-window-length")/1000}});
-  await player.load(next.select(mode,binding.value,$("solo").value),next.gain.applied,{frame:0,resume:false});
-  session=next;seek.max=String(next.length);show(0);
+  await loadMode(next,mode,{frame:0,resume:false,reset:true});
+  session=next;savedAxes={};seek.max=String(next.length);show(0);
+  for(const name of ["source","wet"]){$(name+"-seek").max=String(next.length-1);$(name+"-speed").value="1";$(name+"-repeat").checked=false;}
+  showAxes(player.state.axes);
   $("gain").textContent="共通出力ゲイン "+next.gain.applied.toFixed(4)+"（安全減衰を含む）";
   const range=next.irWindow;
   $("window-range").textContent="適用IR窓: "+(range.startFrame/next.sampleRate*1000).toFixed(3)+" – "+(range.endFrame/next.sampleRate*1000).toFixed(3)+" ms"+(range.truncated?"（IR終端まで）":"");
@@ -66,10 +93,17 @@ for(const [id,select,set] of [["source-file","source",v=>sourceFile=v],["ir-file
 for(const button of document.querySelectorAll("[data-mode]"))button.onclick=()=>run(()=>choose(button.dataset.mode));
 $("solo").onchange=()=>run(()=>choose(mode));
 $("apply-mix").onclick=()=>run(()=>choose(mode));
-$("play").onclick=()=>run(async()=>{await audio();if(player.state.position>=session.length)await player.seek(0);await player.play();message("再生要求を受理");});
+$("play").onclick=()=>run(async()=>{await audio();if(!isScrubMode(mode)&&player.state.position>=session.length)await player.seek(0);await player.play();message("再生要求を受理");});
 $("pause").onclick=()=>run(async()=>{await player.pause();message("一時停止");});
 $("stop").onclick=()=>run(async()=>{await player.pause();await player.seek(0);show(0);message("先頭");});
 seek.addEventListener("input",()=>{seeking=true;show(Number(seek.value));});
 seek.addEventListener("change",()=>{const frame=Number(seek.value);seeking=false;void run(()=>player.seek(frame));});
+for(const name of ["source","wet"]){
+  const slider=$(name+"-seek"),speed=$(name+"-speed"),repeat=$(name+"-repeat");
+  slider.oninput=()=>{dragging.add(name);$(name+"-position").textContent=((session.interval.start+Number(slider.value))/session.sampleRate).toFixed(3)+" s（要求）";};
+  slider.onchange=()=>{const frame=Number(slider.value);dragging.delete(name);void run(async()=>{await player.configureAxis(name,{frame});showAxes(player.state.axes);});};
+  speed.onchange=()=>run(async()=>{if(!speed.value.trim())throw Error("速度を入力してください");await player.configureAxis(name,{speed:Number(speed.value)});showAxes(player.state.axes);});
+  repeat.onchange=()=>run(async()=>{await player.configureAxis(name,{repeat:repeat.checked});showAxes(player.state.axes);});
+}
 window.addEventListener("pagehide",()=>{player?.dispose();void ctx?.close();},{once:true});
 controls();

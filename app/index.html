@@ -2,7 +2,7 @@
 <html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Reverb Time Remapping</title><link rel="stylesheet" href="style.css"></head>
 <body><main>
-<header><h1>Reverb Time Remapping</h1><p>正規版・比較試聴（R3a） <a href="../prototype/">Muse実験版</a></p></header>
+<header><h1>Reverb Time Remapping</h1><p>正規版・比較試聴（R3b・時間操作） <a href="../prototype/">Muse実験版</a></p></header>
 <section aria-label="素材"><h2>音源 / IR</h2><div class="fields">
 <label>原音<select id="source"><option value="impulse">Impulse</option><option value="sine">Sine</option><option value="square">Square</option><option value="saw">Saw</option><option value="noise">Noise</option><option value="chord">Chord</option><option value="piano-like">Piano風（合成）</option><option value="drums-like">Drums風（合成）</option><option value="file" disabled>読込WAV</option></select></label>
 <label>原音WAV<input id="source-file" type="file" accept=".wav,audio/wav"></label>
@@ -16,12 +16,22 @@
 <button id="prepare" type="button">比較音を準備</button>
 </div></section>
 <section aria-label="比較試聴"><h2>比較試聴</h2><div class="modes" role="group" aria-label="方式">
-<button data-mode="dry" aria-pressed="true">Dry</button><button data-mode="normal" aria-pressed="false">Normal</button><button data-mode="reverse" aria-pressed="false">Reverse</button><button data-mode="ir-window" aria-pressed="false">IR Window</button>
+<button data-mode="dry" aria-pressed="true">Dry</button><button data-mode="normal" aria-pressed="false">Normal</button><button data-mode="reverse" aria-pressed="false">Reverse</button><button data-mode="ir-window" aria-pressed="false">IR Window</button><button data-mode="wet-buffer" aria-pressed="false">Wet Buffer</button><button data-mode="wet-spectral" aria-pressed="false">Wet Spectral</button>
 </div><div class="fields">
 <label>Wet (%)<input id="wet" inputmode="decimal" type="text"></label>
 <label>試聴<select id="solo"><option value="mix">Dry + Wet</option><option value="dry">Dryのみ</option><option value="wet">Wetのみ</option></select></label><button id="apply-mix" disabled>Wet設定を反映</button>
 </div><div class="modes"><button id="play" disabled>再生</button><button id="pause" disabled>一時停止</button><button id="stop" disabled>先頭へ</button></div>
 <label>共通時間位置 <output id="time">—</output><input id="seek" type="range" min="0" max="1" step="1" value="0" disabled></label>
-<output id="gain">—</output><p><output id="window-range">IR窓: 未準備</output></p><p id="status" role="status" aria-live="polite">比較音を準備してください。</p>
+<div id="scrub-axes" hidden>
+<h2>独立参照時間</h2>
+<div class="fields">
+<label>Source位置 <output id="source-position">—</output><input id="source-seek" type="range" min="0" max="1" step="1" value="0"></label>
+<label>Source速度 (×)<input id="source-speed" type="number" min="-8" max="8" step="any" value="1"></label>
+<label>Source反復<input id="source-repeat" type="checkbox"></label>
+<label>Wet位置 <output id="wet-position">—</output><input id="wet-seek" type="range" min="0" max="1" step="1" value="0"></label>
+<label>Wet速度 (×)<input id="wet-speed" type="number" min="-8" max="8" step="any" value="1"></label>
+<label>Wet反復<input id="wet-repeat" type="checkbox"></label>
+</div><p class="note">0×: SourceとWet Bufferは局所50msループ、Wet Spectralは位相継続再合成。反復は比較区間全体。素材の無音部は無音。Wetは準備済み通常残響の独立参照であり、現在のSource操作で再畳み込みしません。</p>
+</div><output id="gain">—</output><p><output id="window-range">IR窓: 未準備</output></p><p id="status" role="status" aria-live="polite">比較音を準備してください。</p>
 <p class="note">有限キャッシュを使用。IR Windowは選択区間を先頭へ移して畳み込む方式。IR窓の変更は比較音を再準備。発生済み残響の巻戻し・IR再合成は後続工程。切替には短い準備間隔があります。</p></section>
 </main><script type="module" src="main.mjs"></script></body></html>

@@ -73,6 +73,11 @@ function showAxes(axes){
     }
   }
 }
+function showCalibration(value){
+  if(!value)return;
+  $("wet-calibration-applied").textContent=value.mode==="compensated"?
+    "Wet補正目標 ×"+value.targetScale.toFixed(3):"Wet自然減衰 ×1";
+}
 function message(s){status.textContent=s;}
 function controls(){
   for(const id of ["source","source-file","ir","ir-file","frequency","ir-length","predelay","ir-window-start","ir-window-length","ir-calibration","prepare","wet","solo"])$(id).disabled=busy;
@@ -82,6 +87,7 @@ function controls(){
   $("ir-window-scrub").disabled=(busy&&!windowApplying)||!session||appliedMode!=="ir-window";
   if(windowApplying)for(const id of ["ir-window-start","ir-window-length","ir-calibration"])$(id).disabled=false;
   $("scrub-axes").hidden=!isScrubMode(appliedMode);
+  $("wet-calibration").disabled=busy||!session||!isScrubMode(appliedMode);
   for(const name of ["source","wet"])for(const suffix of ["seek","speed","repeat","range-start","range-end","loop-style"])
     $(name+"-"+suffix).disabled=busy||!session||!isScrubMode(appliedMode);
 }
@@ -98,7 +104,7 @@ async function run(fn){
 async function audio(){
   if(!ctx){ctx=new AudioContext();player=createPreviewPlayer(ctx,{onState:s=>{
     if(s.error){message("再生エラー: "+s.error);return;}
-    show(s.position);showAxes(s.axes);
+    show(s.position);showAxes(s.axes);showCalibration(s.calibration);
     if(s.event?.type==="render-applied"&&s.event.missingFramesInBlock===0)
       status.dataset.renderApplied=String(s.event.requestId);
     if(s.event?.type==="progress")status.dataset.renderedFrames=String(s.event.renderedFrames);
@@ -112,7 +118,7 @@ async function loadMode(target,next,options={}){
     const positions=options.reset?{}:{...savedAxes,
       source:{...savedAxes.source,frame:Math.round(player.state.position)}};
     await player.load(target.signals.dry,target.gain.applied,{...options,
-      scrub:{wet:target.signals.normal,mode:next,mix:binding.value,solo:$("solo").value},positions});
+      scrub:{wet:target.signals.normal,mode:next,mix:binding.value,solo:$("solo").value,calibration:$("wet-calibration").value},positions});
   }else await player.load(target.select(next,binding.value,$("solo").value),target.gain.applied,options);
 }
 async function choose(next){
@@ -120,7 +126,7 @@ async function choose(next){
   if(next!==mode)cancelWindowRequests();
   await audio();
   if(next!==mode||!isScrubMode(next)||!player.setMix(binding.value,$("solo").value))await loadMode(session,next);
-  if(isScrubMode(next))showAxes(player.state.axes);
+  if(isScrubMode(next)){showAxes(player.state.axes);showCalibration(player.state.calibration);}
   mode=appliedMode=next;
   message("適用: "+mode+" / Wet "+(binding.value*100).toFixed(3)+"%");
   show(player.state.position);
@@ -143,7 +149,7 @@ $("prepare").onclick=()=>run(async()=>{
     }
     $(name+"-range-start").value=String(a);$(name+"-range-end").value=String(b);
   }
-  showAxes(player.state.axes);
+  showAxes(player.state.axes);showCalibration(player.state.calibration);
   showWindow(next);
   message("準備済み: "+mode);status.dataset.prepared="true";
 });
@@ -181,6 +187,10 @@ for(const name of ["source","wet"]){
   $(name+"-range-start").onchange=applyRange;$(name+"-range-end").onchange=applyRange;
   $(name+"-loop-style").onchange=applyRange;
 }
+$("wet-calibration").onchange=()=>run(async()=>{
+  if(!player.setCalibration($("wet-calibration").value))throw Error("Wet独立参照方式を選択してください");
+  showCalibration(player.state.calibration);
+});
 $("ir-window-scrub").oninput=()=>{$("ir-window-start").value=$("ir-window-scrub").value;requestWindow();};
 for(const id of ["ir-window-start","ir-window-length","ir-calibration"])$(id).onchange=requestWindow;
 window.addEventListener("pagehide",()=>{cancelWindowRequests();player?.dispose();void ctx?.close();},{once:true});

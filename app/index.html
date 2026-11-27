@@ -26,6 +26,8 @@
 <div id="scrub-axes" hidden>
 <h2>独立参照時間</h2>
 <div class="fields">
+<label>Wet参照音量<select id="wet-calibration"><option value="natural">自然減衰</option><option value="compensated">局所RMS補正</option></select></label>
+<output id="wet-calibration-applied">Wet自然減衰 ×1</output>
 <label>Source位置 <output id="source-position">—</output><input id="source-seek" type="range" min="0" max="1" step="1" value="0"></label>
 <label>Source速度 (×)<input id="source-speed" type="number" min="-8" max="8" step="any" value="1"></label>
 <label>Source反復<input id="source-repeat" type="checkbox"></label>
@@ -40,7 +42,7 @@
 <label>Wet区間開始 (s)<input id="wet-range-start" type="number" step="any" value="0"></label>
 <label>Wet区間終了 (s)<input id="wet-range-end" type="number" step="any" value="0"></label>
 <output id="wet-range-applied">反復区間: —</output>
-</div><p class="note">0×: SourceとWet Bufferは局所50msループ、Wet Spectralは位相継続再合成。反復・往復区間は共通時間座標の秒で指定（終了点を含まない）。往復のPVは折返した波形文脈を解析します。固定時の局所波形は別。素材の無音部は無音。Wetは準備済み通常残響の独立参照であり、現在のSource操作で再畳み込みしません。</p>
+</div><p class="note">0×: SourceとWet Bufferは局所50msループ、Wet Spectralは位相継続再合成。反復・往復区間は共通時間座標の秒で指定（終了点を含まない）。往復のPVは折返した波形文脈を解析します。固定時の局所波形は別。素材の無音部は無音。Wet補正は元のWetの局所50ms RMSを全体RMSへ近づける試聴用ゲインで、IR補正・Dry・Wet再合成自体は変更しません。Wetは準備済み通常残響の独立参照であり、現在のSource操作で再畳み込みしません。</p>
 </div><div id="ir-live" hidden>
 <label>IR窓の開始位置 (ms) <output id="window-request">—</output><input id="ir-window-scrub" type="range" min="0" max="1" step="any" value="0" disabled></label>
 <p class="note">再生中も窓を更新できます。新しい有限キャッシュの準備まで前の音を維持します。</p>

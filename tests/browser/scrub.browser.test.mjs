@@ -44,6 +44,11 @@ test("real Wet Buffer/PV Worklets keep independent axes and non-DC freeze output
     await page.click("#play");await enabled();
     await page.waitForFunction(()=>Number(document.querySelector("#source-seek").value)>26000);
     assert.equal(await pos("wet"),30000);await audible();
+    await page.select("#wet-calibration","compensated");await enabled();
+    assert.match(await page.$eval("#wet-calibration-applied",el=>el.textContent),/^Wet補正目標 ×/);
+    assert.equal(await pos("wet"),30000);
+    await page.select("#wet-calibration","natural");await enabled();
+    assert.equal(await page.$eval("#wet-calibration-applied",el=>el.textContent),"Wet自然減衰 ×1");
     await page.click("#pause");await enabled();
     const sourceBefore=await pos("source");
     await choose("wet-spectral");assert.equal(await pos("wet"),30000);
@@ -136,6 +141,31 @@ test("real Wet Buffer/PV Worklets keep independent axes and non-DC freeze output
     await page.$eval("#wet-repeat",el=>{el.checked=false;el.dispatchEvent(new Event("change"));});await enabled();
     assert.match(await page.$eval("#wet-range-applied",el=>el.textContent),/^反復範囲:/);
     await page.click("#pause");await enabled();
+    // Direct actual output measurement with a known 10:1 Wet decay fixture.
+    const levels=await page.evaluate(async()=>{
+      const {createScrubPair}=await import("/src/scrub-pair.mjs");
+      const c=new AudioContext({sampleRate:48000}),sr=c.sampleRate,n=sr;
+      const signal=(low,high)=>({sampleRate:sr,origin:0,channels:[Float32Array.from({length:n},
+        (_,i)=>(i<n/2?high:low)*Math.sin(2*Math.PI*440*i/sr))]});
+      const dry=signal(.2,.2),wet=signal(.02,.2);
+      const p=await createScrubPair({ctx:c,dry,wet,mode:"wet-buffer",mix:1,solo:"wet",
+        positions:{source:{frame:36000,speed:0},wet:{frame:36000,speed:0}}});
+      const tap=c.createAnalyser();tap.fftSize=2048;p.connect(tap);tap.connect(c.destination);
+      const measure=async()=>{await new Promise(r=>setTimeout(r,180));const a=new Float32Array(tap.fftSize);
+        tap.getFloatTimeDomainData(a);return Math.sqrt(a.reduce((s,v)=>s+v*v,0)/a.length);};
+      try{
+        await p.play();const natural=await measure();
+        p.setCalibration("compensated");const compensated=await measure(),scale=p.calibration.targetScale;
+        p.setMix(1,"dry");const dryComp=await measure();
+        p.setCalibration("natural");const dryNatural=await measure();
+        return {natural,compensated,scale,dryComp,dryNatural,axes:p.axes};
+      }finally{p.dispose();tap.disconnect();await c.close();}
+    });
+    assert.ok(levels.natural>.008&&levels.natural<.02,JSON.stringify(levels));
+    assert.ok(levels.scale>6.9&&levels.scale<7.3,JSON.stringify(levels));
+    assert.ok(Math.abs(levels.compensated/levels.natural-levels.scale)<.3,JSON.stringify(levels));
+    assert.ok(Math.abs(levels.dryComp-levels.dryNatural)<.005,JSON.stringify(levels));
+    assert.equal(levels.axes.wet.frame,36000);assert.equal(levels.axes.source.frame,36000);
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
     assert.deepEqual(errors,[]);
   }finally{await cleanupTestProcesses(browser,[server]);}

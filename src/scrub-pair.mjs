@@ -1,6 +1,7 @@
 import {createSourcePCMBridge} from "../shared/atf/source-pcm-bridge.mjs";
 import {validatePlaybackSpeed} from "../shared/atf/source-timeline.mjs";
 import {createReflectedPCMSource} from "../shared/atf/reflected-pcm-source.mjs";
+import {createLocalRMSCalibration,validateCalibration} from "./level-calibration.mjs";
 
 export const isScrubMode=mode=>mode==="wet-buffer"||mode==="wet-spectral";
 export function scrubGains(wet,solo){
@@ -38,18 +39,36 @@ export function axisSource(signal,config,processingMode){
   return {plan,reader,frame:reader.toVirtualFrame(plan.frame,{returning:!!config.returning}),
     a:0,b:reader.sourceFrames,loop:true};
 }
-export async function createScrubPair({ctx,dry,wet,mode,mix,solo,onEvent=()=>{},positions={}}){
+export async function createScrubPair({ctx,dry,wet,mode,mix,solo,calibration="natural",onEvent=()=>{},positions={}}){
   const length=dry.channels[0].length,sr=dry.sampleRate;
   if(!isScrubMode(mode)||wet.channels[0].length!==length||wet.sampleRate!==sr||wet.origin!==dry.origin)
     throw RangeError("共通座標のWetキャッシュが必要です");
   let closed=false,running=false,connected=false;
+  let wetCalibration=validateCalibration(calibration),calibrationFrame=null,calibrationScale=1;
+  const localLevel=createLocalRMSCalibration(wet.channels,Math.max(1,Math.round(.05*sr)));
   const tracks={},routes=new Set(),nodes=[],gains=scrubGains(mix,solo);
   const state=()=>Object.fromEntries(Object.entries(tracks).map(([k,t])=>[k,{
     frame:t.config.speed===0?t.anchor:t.frame,speed:t.config.speed,repeat:t.config.repeat,
     rangeStartFrame:t.config.rangeStartFrame,rangeEndFrame:t.config.rangeEndFrame,
     loopStyle:t.config.loopStyle,returning:t.returning,ended:t.ended}]));
-  const report=event=>onEvent({...event,sourceFrame:state().source?.frame??0,running,
-    ended:Object.values(tracks).every(t=>t.ended),axes:state()});
+  function applyCalibration(force=false){
+    const t=tracks.wet;if(!t)return;
+    const frame=Math.round(t.config.speed===0?t.anchor:t.frame);
+    if(!force&&frame===calibrationFrame)return;
+    calibrationFrame=frame;
+    const scale=localLevel.scaleAt(frame,wetCalibration);
+    if(force||scale!==calibrationScale){
+      calibrationScale=scale;
+      if(running)t.level.gain.setTargetAtTime(scale,ctx.currentTime,.01);
+      else {t.level.gain.cancelScheduledValues(ctx.currentTime);t.level.gain.value=scale;}
+    }
+  }
+  const calibrationState=()=>({mode:wetCalibration,targetScale:calibrationScale,windowFrames:localLevel.windowFrames});
+  const report=event=>{
+    applyCalibration();
+    onEvent({...event,sourceFrame:state().source?.frame??0,running,
+      ended:Object.values(tracks).every(t=>t.ended),axes:state(),calibration:calibrationState()});
+  };
   const mapFrame=(route,frame)=>route.reader?route.reader.toSourceFrame(frame):frame;
   function updateFrame(t,route,frame){
     t.frame=mapFrame(route,frame);
@@ -107,11 +126,14 @@ export async function createScrubPair({ctx,dry,wet,mode,mix,solo,onEvent=()=>{},
       loopStyle:"repeat",returning:false,...positions[name]};
     const source=axisSource(signal,config,processingMode),plan=source.plan;
     const gain=ctx.createGain();gain.gain.value=value;nodes.push(gain);
+    const level=name==="wet"?ctx.createGain():null;
+    if(level){level.gain.value=1;gain.connect(level);nodes.push(level);}
     const t={name,signal,config,anchor:plan.anchor,frame:plan.frame,returning:config.returning,
-      ended:false,gain,processingMode,route:null};
+      ended:false,gain,level,processingMode,route:null};
     tracks[name]=t;
     t.route=await prepareRoute(t,config,source);
     t.route.node.gain.value=1;updateFrame(t,t.route,source.frame);
+    if(name==="wet")applyCalibration(true);
   };
   function dispose(){if(closed)return;closed=true;for(const route of [...routes])release(route);for(const node of nodes)node.disconnect();}
   try{await setup("source",dry,"raw",gains[0]);await setup("wet",wet,mode==="wet-spectral"?"pv":"raw",gains[1]);}
@@ -173,13 +195,14 @@ export async function createScrubPair({ctx,dry,wet,mode,mix,solo,onEvent=()=>{},
     report({type:"axis-accepted",axis:name});return receipt;
   }
   return {
-    connect(destination){for(const t of Object.values(tracks))t.gain.connect(destination);connected=true;},
+    connect(destination){for(const t of Object.values(tracks))(t.level??t.gain).connect(destination);connected=true;},
     async play(){await Promise.all(Object.values(tracks).map(t=>t.route.bridge.play()));running=true;report({type:"pair-accepted"});},
     async pause(){const receipts=await Promise.all(Object.values(tracks).map(t=>t.route.bridge.pause()));
       Object.values(tracks).forEach((t,i)=>updateFrame(t,t.route,receipts[i].sourceFrame));running=false;
       report({type:"pair-accepted"});return {sourceFrame:state().source.frame};},
     async seek(frame){await Promise.all(["source","wet"].map(name=>configure(name,{frame})));return {sourceFrame:state().source.frame};},
-    configure,dispose,get axes(){return state();},
+    configure,dispose,get axes(){return state();},get calibration(){return calibrationState();},
+    setCalibration(mode){ensure();wetCalibration=validateCalibration(mode);applyCalibration(true);report({type:"axis-accepted",axis:"wet"});return true;},
     setMix(mix,solo){const values=scrubGains(mix,solo);Object.values(tracks).forEach((t,i)=>t.gain.gain.setTargetAtTime(values[i],ctx.currentTime,.005));}
   };
 }

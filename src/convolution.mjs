@@ -103,3 +103,6 @@ export function previewGain(signals,requested=1,ceiling=.9){
   for(const signal of signals)for(const c of pcm(signal).channels)for(const v of c)peak=Math.max(peak,Math.abs(v));
   return {peak,requested,applied:peak===0?requested:Math.min(requested,ceiling/peak),ceiling};
 }
+
+// Reuse the same PCM coordinate/size checks in finite IR synthesis.
+export {pcm as validatePCM,budget as checkPCMBudget};

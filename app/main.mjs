@@ -51,7 +51,8 @@ const binding=createWetMixBinding();
 mountWetMixField({field:$("wet"),binding,onChanged:()=>{message("Wet設定変更・未反映。Wet設定を反映、または方式を切り替えてください。");}});
 async function loadMode(target,next,options={}){
   if(isScrubMode(next)){
-    const positions=options.reset?{}:savedAxes;
+    const positions=options.reset?{}:{...savedAxes,
+      source:{...savedAxes.source,frame:Math.round(player.state.position)}};
     await player.load(target.signals.dry,target.gain.applied,{...options,
       scrub:{wet:target.signals.normal,mode:next,mix:binding.value,solo:$("solo").value},positions});
   }else await player.load(target.select(next,binding.value,$("solo").value),target.gain.applied,options);
@@ -92,7 +93,7 @@ for(const [id,select,set] of [["source-file","source",v=>sourceFile=v],["ir-file
 for(const button of document.querySelectorAll("[data-mode]"))button.onclick=()=>run(()=>choose(button.dataset.mode));
 $("solo").onchange=()=>run(()=>choose(mode));
 $("apply-mix").onclick=()=>run(()=>choose(mode));
-$("play").onclick=()=>run(async()=>{await audio();if(player.state.position>=session.length)await player.seek(0);await player.play();message("再生要求を受理");});
+$("play").onclick=()=>run(async()=>{await audio();if(!isScrubMode(mode)&&player.state.position>=session.length)await player.seek(0);await player.play();message("再生要求を受理");});
 $("pause").onclick=()=>run(async()=>{await player.pause();message("一時停止");});
 $("stop").onclick=()=>run(async()=>{await player.pause();await player.seek(0);show(0);message("先頭");});
 seek.addEventListener("input",()=>{seeking=true;show(Number(seek.value));});

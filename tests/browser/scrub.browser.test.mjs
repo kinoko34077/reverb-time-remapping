@@ -50,6 +50,16 @@ test("real Wet Buffer/PV Worklets keep independent axes and non-DC freeze output
     assert.equal(await pos("source"),sourceBefore);
     await page.click("#play");await enabled();await audible();
     assert.equal(await pos("wet"),30000);
+    // Verify real frequency content, not merely selected mode metadata.
+    const energy=async hz=>page.evaluate(hz=>{
+      const tap=window.__scrubOutput,pcm=new Float32Array(tap.fftSize);tap.getFloatTimeDomainData(pcm);
+      let r=0,j=0;for(let i=0;i<pcm.length;i++){
+        const phase=2*Math.PI*hz*i/tap.context.sampleRate;
+        r+=pcm[i]*Math.cos(phase);j+=pcm[i]*Math.sin(phase);
+      }
+      return Math.hypot(r,j);
+    },hz);
+    assert.ok(await energy(440)>3*await energy(880),"PV freeze retains the 440Hz carrier");
     const wetBefore=await pos("wet");await field("wet-speed",-1);
     await page.waitForFunction(p=>Number(document.querySelector("#wet-seek").value)<p-512,{},wetBefore);
     await page.click("#pause");await enabled();

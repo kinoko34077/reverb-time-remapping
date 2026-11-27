@@ -34,8 +34,10 @@ export function createPreviewPlayer(ctx,{onState=()=>{}}={}){
       // The command receipt is newer than a periodic progress snapshot.
       const target=resume?Math.min(length,Math.max(0,Math.round(paused?.sourceFrame??position))):initial;
       if(target!==initial){
-        if(scrub)await next.configure("source",{frame:target});
-        else await next.seek(target);
+        if(scrub){
+          await next.configure("source",{frame:target});
+          if(!positions.wet)await next.configure("wet",{frame:target});
+        }else await next.seek(target);
       }
       if(disposed||token!==revision){next.dispose();return false;}
       current?.dispose();current=next;

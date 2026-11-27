@@ -60,11 +60,22 @@ export async function createScrubPair({ctx,dry,wet,mode,mix,solo,onEvent=()=>{},
     // Use upstream atomic loop configuration and scrub. Pause is not needed
     // for parameter updates, and the other axis is never commanded here.
     const prior=t.config,priorPlan=axisPlan({...prior,frame:Math.round(state()[name].frame)},length,sr,t.processingMode);
-    if(plan.loop!==priorPlan.loop||plan.a!==priorPlan.a||plan.b!==priorPlan.b)
-      await t.bridge.setLoopConfiguration(plan.a,plan.b,plan.loop);
-    const receipt=await t.bridge.scrub(Math.min(length-1,plan.frame),plan.speed);
-    if(receipt.stale)return receipt;
-    t.config=next;t.anchor=plan.anchor;t.frame=receipt.sourceFrame;t.ended=false;
+    const loopChanged=plan.loop!==priorPlan.loop||plan.a!==priorPlan.a||plan.b!==priorPlan.b;
+    const rawFreeze=t.processingMode==="raw"&&(plan.frozen||priorPlan.frozen);
+    let receipt;
+    if(loopChanged)receipt=await t.bridge.setLoopConfiguration(plan.a,plan.b,plan.loop);
+    // Speed-only edits use the render-thread cursor, never a stale periodic
+    // progress frame. Explicit seeks and raw freeze window edits use scrub.
+    if(Object.hasOwn(config,"frame")||rawFreeze&&(plan.frozen!==priorPlan.frozen||loopChanged)){
+      receipt=await t.bridge.scrub(Math.min(length-1,plan.frame),plan.speed);
+    }else if(plan.speed!==priorPlan.speed){
+      receipt=await t.bridge.setSpeed(plan.speed);
+    }
+    if(receipt?.stale)return receipt;
+    t.config=next;
+    if(plan.frozen)t.anchor=t.processingMode==="raw"?plan.anchor:receipt?.sourceFrame??t.frame;
+    if(receipt)t.frame=receipt.sourceFrame;
+    if(receipt)t.ended=false;
     report({type:"axis-accepted",axis:name});
     return receipt;
   }

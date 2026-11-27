@@ -1,13 +1,13 @@
 import {createSourcePCMBridge} from "../shared/atf/source-pcm-bridge.mjs";
 import {validatePlaybackSpeed} from "../shared/atf/source-timeline.mjs";
+import {createReflectedPCMSource} from "../shared/atf/reflected-pcm-source.mjs";
 
 export const isScrubMode=mode=>mode==="wet-buffer"||mode==="wet-spectral";
 export function scrubGains(wet,solo){
   if(!Number.isFinite(wet)||wet<0||wet>1||!["dry","wet","mix"].includes(solo))throw RangeError("無効な試聴比率");
   return solo==="dry"?[1,0]:solo==="wet"?[0,1]:[1-wet,wet];
 }
-// Buffer freeze is a local raw loop, not a zero-speed PCM sample. The anchor
-// stays fixed while the carrier loops. PV freeze uses the upstream speed=0.
+// Buffer freeze is a local raw loop, not a zero-speed PCM sample.
 export function axisPlan({frame,speed,repeat=false,rangeStartFrame=0,rangeEndFrame},length,sampleRate,processingMode){
   rangeEndFrame??=length;
   validatePlaybackSpeed(speed);
@@ -26,70 +26,158 @@ export function axisPlan({frame,speed,repeat=false,rangeStartFrame=0,rangeEndFra
   }
   return {anchor,frame:speed<0||speed===0?anchor:cursor,speed,a:rangeStartFrame,b:rangeEndFrame,loop:!!repeat,frozen:speed===0};
 }
-// Two real shared Worklets. Only the comparison-specific mix, freeze
-// interpretation and ownership live here; no second time/pitch algorithm.
+// The reflected PCM reader is the canonical coordinate mapping, not a new clock.
+export function axisSource(signal,config,processingMode){
+  const length=signal.channels[0].length;
+  const plan=axisPlan(config,length,signal.sampleRate,processingMode);
+  if(!["repeat","pingpong"].includes(config.loopStyle??"repeat"))throw RangeError("反復方式が不正です");
+  // Freeze uses original context (not a reflected, possibly one-sample buffer).
+  if(!config.repeat||config.loopStyle!=="pingpong"||plan.frozen)
+    return {plan,reader:null,frame:plan.frame,a:plan.a,b:plan.b,loop:plan.loop};
+  const reader=createReflectedPCMSource({channels:signal.channels,startFrame:plan.a,endFrame:plan.b});
+  return {plan,reader,frame:reader.toVirtualFrame(plan.frame,{returning:!!config.returning}),
+    a:0,b:reader.sourceFrames,loop:true};
+}
 export async function createScrubPair({ctx,dry,wet,mode,mix,solo,onEvent=()=>{},positions={}}){
   const length=dry.channels[0].length,sr=dry.sampleRate;
   if(!isScrubMode(mode)||wet.channels[0].length!==length||wet.sampleRate!==sr||wet.origin!==dry.origin)
     throw RangeError("共通座標のWetキャッシュが必要です");
   let closed=false,running=false,connected=false;
-  const tracks={},nodes=[],gains=scrubGains(mix,solo);
-  const state=()=>Object.fromEntries(Object.entries(tracks).map(([k,t])=>[k,{frame:t.config.speed===0?t.anchor:t.frame,speed:t.config.speed,repeat:t.config.repeat,rangeStartFrame:t.config.rangeStartFrame,rangeEndFrame:t.config.rangeEndFrame,ended:t.ended}]));
-  const report=(event)=>onEvent({...event,sourceFrame:state().source?.frame??0,running,ended:Object.values(tracks).every(t=>t.ended),axes:state()});
+  const tracks={},routes=new Set(),nodes=[],gains=scrubGains(mix,solo);
+  const state=()=>Object.fromEntries(Object.entries(tracks).map(([k,t])=>[k,{
+    frame:t.config.speed===0?t.anchor:t.frame,speed:t.config.speed,repeat:t.config.repeat,
+    rangeStartFrame:t.config.rangeStartFrame,rangeEndFrame:t.config.rangeEndFrame,
+    loopStyle:t.config.loopStyle,returning:t.returning,ended:t.ended}]));
+  const report=event=>onEvent({...event,sourceFrame:state().source?.frame??0,running,
+    ended:Object.values(tracks).every(t=>t.ended),axes:state()});
+  const mapFrame=(route,frame)=>route.reader?route.reader.toSourceFrame(frame):frame;
+  function updateFrame(t,route,frame){
+    t.frame=mapFrame(route,frame);
+    if(route.reader)t.returning=route.reader.isReturning(frame);
+  }
+  function release(route){
+    if(!route)return;
+    routes.delete(route);route.bridge?.dispose();route.node.disconnect();
+    route.reject?.(Error("参照経路を終了しました"));
+  }
+  function ensure(){if(closed)throw Error("再生機構を終了しました");}
+  async function prepareRoute(t,config,source){
+    const route={reader:source.reader,node:ctx.createGain(),bridge:null,receipt:null,resolve:null,reject:null};
+    route.node.gain.value=0;routes.add(route);
+    try{
+      route.bridge=await createSourcePCMBridge({ctx,...(source.reader?{source:source.reader}:{sourceChannels:t.signal.channels}),
+        sourceSampleRate:sr,processingMode:t.processingMode,startFrame:source.frame,speed:source.plan.speed,
+        loopStartFrame:source.a,loopEndFrame:source.b,loopEnabled:source.loop,
+        onEvent:event=>{
+          if(closed||!routes.has(route))return;
+          if(event.type==="render-applied"&&event.running&&event.missingFramesInBlock===0){
+            route.receipt=event;route.resolve?.(event);
+          }
+          if(event.type==="fatal-error"){
+            route.failure=Error(event.message);route.reject?.(route.failure);
+          }
+          if(t.route!==route||!connected)return;
+          if(event.type==="progress"||event.type==="render-applied"){
+            updateFrame(t,route,event.sourceFrame);
+            if(event.type==="progress")t.ended=!!event.ended;
+            report({...event,axis:t.name,axisSourceFrame:t.frame});
+          }else if(event.type==="fatal-error"){
+            route.node.gain.value=0;report({...event,axis:t.name});
+          }
+        }});
+      ensure();if(route.failure)throw route.failure;
+      route.bridge.connect(route.node);route.node.connect(t.gain);
+      return route;
+    }catch(error){release(route);throw error;}
+  }
+  async function startReady(route){
+    let timer;
+    try{
+      await route.bridge.play();
+      if(route.failure)throw route.failure;
+      if(!route.receipt)await new Promise((resolve,reject)=>{
+        route.resolve=resolve;route.reject=reject;
+        timer=setTimeout(()=>reject(Error("往復参照の音声出力準備を確認できません")),2500);
+      });
+      ensure();if(route.failure)throw route.failure;
+    }finally{clearTimeout(timer);route.resolve=null;route.reject=null;}
+  }
   const setup=async(name,signal,processingMode,value)=>{
-    const config={frame:0,speed:1,repeat:false,rangeStartFrame:0,rangeEndFrame:length,...positions[name]};
-    const plan=axisPlan(config,length,sr,processingMode);
+    const config={frame:0,speed:1,repeat:false,rangeStartFrame:0,rangeEndFrame:length,
+      loopStyle:"repeat",returning:false,...positions[name]};
+    const source=axisSource(signal,config,processingMode),plan=source.plan;
     const gain=ctx.createGain();gain.gain.value=value;nodes.push(gain);
-    const t={config,anchor:plan.anchor,frame:plan.frame,ended:false,gain,processingMode,bridge:null};
+    const t={name,signal,config,anchor:plan.anchor,frame:plan.frame,returning:config.returning,
+      ended:false,gain,processingMode,route:null};
     tracks[name]=t;
-    t.bridge=await createSourcePCMBridge({ctx,sourceChannels:signal.channels,sourceSampleRate:sr,
-      processingMode,startFrame:plan.frame,speed:plan.speed,loopStartFrame:plan.a,loopEndFrame:plan.b,loopEnabled:plan.loop,
-      onEvent:event=>{
-        if(closed||!connected)return;
-        if(event.type==="progress"||event.type==="render-applied"){
-          t.frame=event.sourceFrame;if(event.type==="progress")t.ended=!!event.ended;
-          report({...event,axis:name,axisSourceFrame:event.sourceFrame});
-        }else if(event.type==="fatal-error"){
-          t.gain.gain.value=0;report({...event,axis:name});
-        }
-      }});
-    t.bridge.connect(gain);
+    t.route=await prepareRoute(t,config,source);
+    t.route.node.gain.value=1;updateFrame(t,t.route,source.frame);
   };
-  function dispose(){if(closed)return;closed=true;for(const t of Object.values(tracks))t.bridge?.dispose();for(const node of nodes)node.disconnect();}
+  function dispose(){if(closed)return;closed=true;for(const route of [...routes])release(route);for(const node of nodes)node.disconnect();}
   try{await setup("source",dry,"raw",gains[0]);await setup("wet",wet,mode==="wet-spectral"?"pv":"raw",gains[1]);}
   catch(error){dispose();throw error;}
   async function configure(name,config){
-    if(closed||!tracks[name])throw Error("参照軸がありません");
-    const t=tracks[name],next={...t.config,frame:state()[name].frame,...config};
+    ensure();if(!tracks[name])throw Error("参照軸がありません");
+    const t=tracks[name],next={...t.config,frame:state()[name].frame,returning:t.returning,...config};
     next.frame=Math.min(length,Math.max(0,Math.round(next.frame)));
-    const plan=axisPlan(next,length,sr,t.processingMode);
-    // Use upstream atomic loop configuration and scrub. Pause is not needed
-    // for parameter updates, and the other axis is never commanded here.
+    let source=axisSource(t.signal,next,t.processingMode),plan=source.plan;
     const prior=t.config,priorPlan=axisPlan({...prior,frame:Math.round(state()[name].frame)},length,sr,t.processingMode);
-    const loopChanged=plan.loop!==priorPlan.loop||plan.a!==priorPlan.a||plan.b!==priorPlan.b;
-    const rawFreeze=t.processingMode==="raw"&&(plan.frozen||priorPlan.frozen);
+    const old=t.route;
+    const sameReader=!!old.reader===!!source.reader&&(!old.reader||
+      old.reader.startFrame===source.reader.startFrame&&old.reader.endFrame===source.reader.endFrame);
+    if(!sameReader){
+      // Stage only this axis. The other Worklet is never paused or recreated.
+      // Keep original output active until the new Worklet has rendered PCM.
+      let candidate;
+      try{
+        candidate=await prepareRoute(t,next,source);
+        if(!Object.hasOwn(config,"frame")){
+          next.frame=Math.min(length,Math.max(0,Math.round(state()[name].frame)));
+          next.returning=t.returning;source=axisSource(t.signal,next,t.processingMode);plan=source.plan;
+          const needsReseek=source.frame!==candidate.bridge.latest?.sourceFrame;
+          if(needsReseek)await candidate.bridge.seek(source.frame);
+          if(!source.reader&&plan.frozen&&t.processingMode==="raw"){
+            await candidate.bridge.setLoopConfiguration(source.a,source.b,source.loop);
+            await candidate.bridge.scrub(plan.frame,plan.speed);
+          }
+        }
+        if(running)await startReady(candidate);
+        ensure();
+        t.route=candidate;t.config=next;t.anchor=plan.anchor;t.ended=false;
+        updateFrame(t,candidate,candidate.receipt?.sourceFrame??source.frame);
+        if(running){
+          const now=ctx.currentTime,end=now+.025;
+          old.node.gain.setValueAtTime(1,now);old.node.gain.linearRampToValueAtTime(0,end);
+          candidate.node.gain.setValueAtTime(0,now);candidate.node.gain.linearRampToValueAtTime(1,end);
+          await new Promise(resolve=>setTimeout(resolve,40));
+        }else candidate.node.gain.value=1;
+        release(old);report({type:"axis-accepted",axis:name});return {sourceFrame:t.frame};
+      }catch(error){if(candidate&&candidate!==t.route)release(candidate);throw error;}
+    }
     let receipt;
-    if(loopChanged)receipt=await t.bridge.setLoopConfiguration(plan.a,plan.b,plan.loop);
-    // Speed-only edits use the render-thread cursor, never a stale periodic
-    // progress frame. Explicit seeks and raw freeze window edits use scrub.
-    if(Object.hasOwn(config,"frame")||rawFreeze&&(plan.frozen!==priorPlan.frozen||loopChanged)){
-      receipt=await t.bridge.scrub(Math.min(length-1,plan.frame),plan.speed);
-    }else if(plan.speed!==priorPlan.speed){
-      receipt=await t.bridge.setSpeed(plan.speed);
+    if(old.reader){
+      if(Object.hasOwn(config,"frame"))receipt=await old.bridge.scrub(source.frame,plan.speed);
+      else if(plan.speed!==priorPlan.speed)receipt=await old.bridge.setSpeed(plan.speed);
+    }else{
+      const loopChanged=plan.loop!==priorPlan.loop||plan.a!==priorPlan.a||plan.b!==priorPlan.b;
+      const rawFreeze=t.processingMode==="raw"&&(plan.frozen||priorPlan.frozen);
+      if(loopChanged)receipt=await old.bridge.setLoopConfiguration(plan.a,plan.b,plan.loop);
+      if(Object.hasOwn(config,"frame")||rawFreeze&&(plan.frozen!==priorPlan.frozen||loopChanged))
+        receipt=await old.bridge.scrub(Math.min(length-1,plan.frame),plan.speed);
+      else if(plan.speed!==priorPlan.speed)receipt=await old.bridge.setSpeed(plan.speed);
     }
     if(receipt?.stale)return receipt;
     t.config=next;
     if(plan.frozen)t.anchor=t.processingMode==="raw"?plan.anchor:receipt?.sourceFrame??t.frame;
-    if(receipt)t.frame=receipt.sourceFrame;
-    if(receipt)t.ended=false;
-    report({type:"axis-accepted",axis:name});
-    return receipt;
+    if(receipt){updateFrame(t,old,receipt.sourceFrame);t.ended=false;}
+    report({type:"axis-accepted",axis:name});return receipt;
   }
   return {
     connect(destination){for(const t of Object.values(tracks))t.gain.connect(destination);connected=true;},
-    async play(){await Promise.all(Object.values(tracks).map(t=>t.bridge.play()));running=true;report({type:"pair-accepted"});},
-    async pause(){const receipts=await Promise.all(Object.values(tracks).map(t=>t.bridge.pause()));
-      Object.values(tracks).forEach((t,i)=>t.frame=receipts[i].sourceFrame);running=false;report({type:"pair-accepted"});return {sourceFrame:state().source.frame};},
+    async play(){await Promise.all(Object.values(tracks).map(t=>t.route.bridge.play()));running=true;report({type:"pair-accepted"});},
+    async pause(){const receipts=await Promise.all(Object.values(tracks).map(t=>t.route.bridge.pause()));
+      Object.values(tracks).forEach((t,i)=>updateFrame(t,t.route,receipts[i].sourceFrame));running=false;
+      report({type:"pair-accepted"});return {sourceFrame:state().source.frame};},
     async seek(frame){await Promise.all(["source","wet"].map(name=>configure(name,{frame})));return {sourceFrame:state().source.frame};},
     configure,dispose,get axes(){return state();},
     setMix(mix,solo){const values=scrubGains(mix,solo);Object.values(tracks).forEach((t,i)=>t.gain.gain.setTargetAtTime(values[i],ctx.currentTime,.005));}

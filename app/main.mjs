@@ -63,9 +63,9 @@ function showAxes(axes){
   for(const name of ["source","wet"]){
     const axis=axes[name];if(!axis)continue;
     savedAxes[name]={frame:Math.round(axis.frame),speed:axis.speed,repeat:axis.repeat,
-      rangeStartFrame:axis.rangeStartFrame,rangeEndFrame:axis.rangeEndFrame};
+      rangeStartFrame:axis.rangeStartFrame,rangeEndFrame:axis.rangeEndFrame,loopStyle:axis.loopStyle,returning:axis.returning};
     const seconds=frame=>(session.interval.start+frame)/session.sampleRate;
-    $(name+"-range-applied").textContent=(axis.repeat?"反復中: ":"反復範囲: ")+
+    $(name+"-range-applied").textContent=(axis.repeat?(axis.loopStyle==="pingpong"?"往復中: ":"反復中: "):"反復範囲: ")+
       seconds(axis.rangeStartFrame).toFixed(4)+" – "+seconds(axis.rangeEndFrame).toFixed(4)+" s";
     if(!dragging.has(name)){
       $(name+"-seek").value=String(Math.round(axis.frame));
@@ -82,7 +82,7 @@ function controls(){
   $("ir-window-scrub").disabled=(busy&&!windowApplying)||!session||appliedMode!=="ir-window";
   if(windowApplying)for(const id of ["ir-window-start","ir-window-length","ir-calibration"])$(id).disabled=false;
   $("scrub-axes").hidden=!isScrubMode(appliedMode);
-  for(const name of ["source","wet"])for(const suffix of ["seek","speed","repeat","range-start","range-end"])
+  for(const name of ["source","wet"])for(const suffix of ["seek","speed","repeat","range-start","range-end","loop-style"])
     $(name+"-"+suffix).disabled=busy||!session||!isScrubMode(appliedMode);
 }
 function show(frame){
@@ -136,7 +136,7 @@ $("prepare").onclick=()=>run(async()=>{
   await loadMode(next,mode,{frame:0,resume:false,reset:true});
   session=next;savedAxes={};seek.max=String(next.length);show(0);
   for(const name of ["source","wet"]){
-    $(name+"-seek").max=String(next.length-1);$(name+"-speed").value="1";$(name+"-repeat").checked=false;
+    $(name+"-seek").max=String(next.length-1);$(name+"-speed").value="1";$(name+"-repeat").checked=false;$(name+"-loop-style").value="repeat";
     const a=next.interval.start/next.sampleRate,b=(next.interval.start+next.length)/next.sampleRate;
     for(const suffix of ["range-start","range-end"]){
       $(name+"-"+suffix).min=String(a);$(name+"-"+suffix).max=String(b);
@@ -169,7 +169,7 @@ for(const name of ["source","wet"]){
   speed.onchange=()=>run(async()=>{if(!speed.value.trim())throw Error("速度を入力してください");await player.configureAxis(name,{speed:Number(speed.value)});showAxes(player.state.axes);});
   const applyRange=()=>run(async()=>{
     const toFrame=id=>secondsToFrames(readNumber(id),session.sampleRate)-session.interval.start;
-    await player.configureAxis(name,{repeat:repeat.checked,
+    await player.configureAxis(name,{repeat:repeat.checked,loopStyle:$(name+"-loop-style").value,
       rangeStartFrame:toFrame(name+"-range-start"),rangeEndFrame:toFrame(name+"-range-end")});
     showAxes(player.state.axes);message(name+" の反復区間を適用");
   });
@@ -179,6 +179,7 @@ for(const name of ["source","wet"]){
     showAxes(player.state.axes);message(name+" の反復を解除");
   });
   $(name+"-range-start").onchange=applyRange;$(name+"-range-end").onchange=applyRange;
+  $(name+"-loop-style").onchange=applyRange;
 }
 $("ir-window-scrub").oninput=()=>{$("ir-window-start").value=$("ir-window-scrub").value;requestWindow();};
 for(const id of ["ir-window-start","ir-window-length","ir-calibration"])$(id).onchange=requestWindow;

@@ -113,6 +113,29 @@ test("real Wet Buffer/PV Worklets keep independent axes and non-DC freeze output
     await page.$eval("#wet-repeat",el=>{el.checked=true;el.dispatchEvent(new Event("change"));});await enabled();
     await choose("wet-spectral");
     assert.equal(await page.$eval("#wet-range-applied",el=>el.textContent),applied);
+    await page.select("#wet-loop-style","pingpong");await enabled();
+    assert.match(await page.$eval("#wet-range-applied",el=>el.textContent),/^往復中:/);
+    await field("wet-seek",27000);await page.click("#play");await enabled();
+    const bouncing=await page.evaluate(async()=>{
+      const samples=[];for(let i=0;i<90;i++){
+        await new Promise(r=>setTimeout(r,12));
+        samples.push(Number(document.querySelector("#wet-seek").value));
+      }return samples;
+    });
+    assert.ok(bouncing.every(v=>v>=24000&&v<30000),JSON.stringify(bouncing));
+    assert.ok(bouncing.some((v,i)=>i&&v<bouncing[i-1])&&bouncing.some((v,i)=>i&&v>bouncing[i-1]));
+    assert.equal(await pos("source"),16000);await audible();
+    await field("wet-speed",0);
+    const frozen=await pos("wet");await new Promise(r=>setTimeout(r,120));assert.equal(await pos("wet"),frozen);
+    await audible();
+    await field("wet-speed",-1);await audible();
+    await page.click("#pause");await enabled();
+    await choose("wet-buffer");
+    assert.match(await page.$eval("#wet-range-applied",el=>el.textContent),/^往復中:/);
+    await page.click("#play");await enabled();await audible();
+    await page.$eval("#wet-repeat",el=>{el.checked=false;el.dispatchEvent(new Event("change"));});await enabled();
+    assert.match(await page.$eval("#wet-range-applied",el=>el.textContent),/^反復範囲:/);
+    await page.click("#pause");await enabled();
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
     assert.deepEqual(errors,[]);
   }finally{await cleanupTestProcesses(browser,[server]);}

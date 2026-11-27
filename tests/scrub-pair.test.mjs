@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {axisPlan,scrubGains,isScrubMode} from "../src/scrub-pair.mjs";
+import {axisPlan,axisSource,scrubGains,isScrubMode} from "../src/scrub-pair.mjs";
 
 test("raw freeze keeps the reference anchor and loops a finite local carrier",()=>{
   const p=axisPlan({frame:10000,speed:0},48000,48000,"raw");
@@ -36,4 +36,20 @@ test("repeat bounds constrain only enabled loop and select signed endpoint",()=>
   const freeze=axisPlan({frame:18000,speed:0,repeat:true,...bounds},48000,48000,"raw");
   assert.equal(freeze.anchor,18000);assert.equal(freeze.b-freeze.a,2400);
   assert.throws(()=>axisPlan({frame:0,speed:1,rangeStartFrame:2,rangeEndFrame:2},48000,48000,"raw"),/反復区間/);
+});
+
+test("pingpong uses original coordinates, and freeze retains original PCM context",async()=>{
+  const signal={sampleRate:48000,channels:[Float32Array.from({length:48000},(_,i)=>i/48000)]};
+  const config={frame:12002,speed:-1,repeat:true,loopStyle:"pingpong",rangeStartFrame:12000,rangeEndFrame:12004,returning:true};
+  const route=axisSource(signal,config,"pv");
+  assert.equal(route.reader.sourceFrames,6);assert.equal(route.frame,4);
+  assert.equal(route.reader.toSourceFrame(route.frame),12002);
+  assert.equal(route.reader.isReturning(route.frame),true);
+  assert.deepEqual((await route.reader.read(0,6)).channels[0],Float32Array.from([12000,12001,12002,12003,12002,12001],i=>i/48000));
+  for(const mode of ["raw","pv"]){
+    const frozen=axisSource(signal,{...config,speed:0},mode);
+    assert.equal(frozen.reader,null);assert.equal(frozen.plan.anchor,12002);
+  }
+  const normal=axisSource(signal,{...config,repeat:false},"raw");
+  assert.equal(normal.reader,null);assert.equal(normal.frame,12002);
 });

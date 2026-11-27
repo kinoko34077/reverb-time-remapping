@@ -7,7 +7,7 @@ let ctx,player,session,mode="dry",appliedMode="dry",busy=false,seeking=false,sou
 const status=$("status"),seek=$("seek");
 function message(s){status.textContent=s;}
 function controls(){
-  for(const id of ["source","source-file","ir","ir-file","frequency","ir-length","predelay","prepare","wet","solo"])$(id).disabled=busy;
+  for(const id of ["source","source-file","ir","ir-file","frequency","ir-length","predelay","ir-window-start","ir-window-length","prepare","wet","solo"])$(id).disabled=busy;
   for(const b of document.querySelectorAll("[data-mode]")){b.disabled=busy||!session;b.setAttribute("aria-pressed",String(b.dataset.mode===appliedMode));}
   for(const id of ["play","pause","stop","seek","apply-mix"])$(id).disabled=busy||!session;
 }
@@ -46,10 +46,14 @@ $("prepare").onclick=()=>run(async()=>{
   const source=$("source").value==="file"?sourceFile:makeSource($("source").value,{frequency:Number($("frequency").value)});
   const ir=$("ir").value==="file"?irFile:makeIR($("ir").value,{seconds:Number($("ir-length").value)});
   if(!source||!ir)throw Error("素材を選択してください");
-  const next=await prepareComparison(source,ir,{predelay:Number($("predelay").value)/1000});
+  const readNumber=id=>{const raw=$(id).value;if(!raw.trim()||!Number.isFinite(Number(raw)))throw Error("数値を入力してください: "+id);return Number(raw);};
+  const next=await prepareComparison(source,ir,{predelay:readNumber("predelay")/1000,
+    irWindow:{start:readNumber("ir-window-start")/1000,duration:readNumber("ir-window-length")/1000}});
   await player.load(next.select(mode,binding.value,$("solo").value),next.gain.applied,{frame:0,resume:false});
   session=next;seek.max=String(next.length);show(0);
   $("gain").textContent="共通出力ゲイン "+next.gain.applied.toFixed(4)+"（安全減衰を含む）";
+  const range=next.irWindow;
+  $("window-range").textContent="適用IR窓: "+(range.startFrame/next.sampleRate*1000).toFixed(3)+" – "+(range.endFrame/next.sampleRate*1000).toFixed(3)+" ms"+(range.truncated?"（IR終端まで）":"");
   message("準備済み: "+mode);status.dataset.prepared="true";
 });
 for(const [id,select,set] of [["source-file","source",v=>sourceFile=v],["ir-file","ir",v=>irFile=v]]){

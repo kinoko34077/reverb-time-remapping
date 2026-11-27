@@ -7,6 +7,53 @@ const $=id=>document.getElementById(id);
 let ctx,player,session,mode="dry",appliedMode="dry",busy=false,seeking=false,sourceFile=null,irFile=null;
 const status=$("status"),seek=$("seek");
 let savedAxes={};const dragging=new Set();
+let windowRevision=0,windowWork=null,queuedWindow=null;
+function cancelWindowRequests(){++windowRevision;queuedWindow=null;}
+function readNumber(id){
+  const raw=$(id).value;
+  if(!raw.trim()||!Number.isFinite(Number(raw)))throw Error("数値を入力してください: "+id);
+  return Number(raw);
+}
+function readWindow(){
+  return {start:readNumber("ir-window-start")/1000,duration:readNumber("ir-window-length")/1000,calibration:$("ir-calibration").value};
+}
+function showWindow(next){
+  $("gain").textContent="共通出力ゲイン "+next.gain.applied.toFixed(4)+"（安全減衰を含む）";
+  const range=next.irWindow;
+  $("window-range").textContent="適用IR窓: "+(range.startFrame/next.sampleRate*1000).toFixed(3)+" – "+(range.endFrame/next.sampleRate*1000).toFixed(3)+" ms"+(range.truncated?"（IR終端まで）":"")+
+    (next.irCalibration==="compensated"?" / RMS補正 ×"+next.irScale.toFixed(3):" / 自然減衰");
+  $("ir-window-scrub").max=String((next.irFrames-1)/next.sampleRate*1000);
+  $("ir-window-scrub").value=$("ir-window-start").value;
+  $("window-request").textContent=$("ir-window-start").value+" ms";
+}
+function requestWindow(){
+  if(!session||mode!=="ir-window")return;
+  try{
+    const settings=readWindow();
+    queuedWindow={revision:++windowRevision,base:session,settings};
+    $("window-request").textContent=(settings.start*1000).toFixed(3)+" ms（要求）";
+    message("IR窓を計算中…（旧音を維持）");
+    pumpWindow();
+  }catch(error){message("IR窓を更新できません: "+error.message);}
+}
+function pumpWindow(){
+  if(busy||windowWork||!queuedWindow)return;
+  const job=queuedWindow;queuedWindow=null;
+  windowWork=(async()=>{
+    try{
+      const next=await job.base.withIRWindow(job.settings);
+      if(job.revision!==windowRevision||mode!=="ir-window")return;
+      if(busy){if(!queuedWindow)queuedWindow=job;return;}
+      await run(async()=>{
+        if(job.revision!==windowRevision||mode!=="ir-window")return;
+        const accepted=await player.load(next.select(mode,binding.value,$("solo").value),next.gain.applied,{crossfade:true});
+        if(!accepted)return;
+        session=next;showWindow(next);show(player.state.position);
+        if(job.revision===windowRevision)message("IR窓を適用: "+next.irCalibration);
+      });
+    }catch(error){if(job.revision===windowRevision)message("IR窓を更新できません: "+error.message);}
+  })().finally(()=>{windowWork=null;pumpWindow();});
+}
 function showAxes(axes){
   if(!axes||!session)return;
   for(const name of ["source","wet"]){
@@ -20,9 +67,11 @@ function showAxes(axes){
 }
 function message(s){status.textContent=s;}
 function controls(){
-  for(const id of ["source","source-file","ir","ir-file","frequency","ir-length","predelay","ir-window-start","ir-window-length","prepare","wet","solo"])$(id).disabled=busy;
+  for(const id of ["source","source-file","ir","ir-file","frequency","ir-length","predelay","ir-window-start","ir-window-length","ir-calibration","prepare","wet","solo"])$(id).disabled=busy;
   for(const b of document.querySelectorAll("[data-mode]")){b.disabled=busy||!session;b.setAttribute("aria-pressed",String(b.dataset.mode===appliedMode));}
   for(const id of ["play","pause","stop","seek","apply-mix"])$(id).disabled=busy||!session;
+  $("ir-live").hidden=appliedMode!=="ir-window";
+  $("ir-window-scrub").disabled=busy||!session||appliedMode!=="ir-window";
   $("scrub-axes").hidden=!isScrubMode(appliedMode);
   for(const name of ["source","wet"])for(const suffix of ["seek","speed","repeat"])
     $(name+"-"+suffix).disabled=busy||!session||!isScrubMode(appliedMode);
@@ -35,7 +84,7 @@ function show(frame){
 async function run(fn){
   if(busy)return;busy=true;controls();
   try{await fn();}catch(e){message("処理できません: "+e.message);}
-  finally{busy=false;controls();}
+  finally{busy=false;controls();pumpWindow();}
 }
 async function audio(){
   if(!ctx){ctx=new AudioContext();player=createPreviewPlayer(ctx,{onState:s=>{
@@ -59,6 +108,7 @@ async function loadMode(target,next,options={}){
 }
 async function choose(next){
   if(!session)return;
+  if(next!==mode)cancelWindowRequests();
   await audio();
   if(next!==mode||!isScrubMode(next)||!player.setMix(binding.value,$("solo").value))await loadMode(session,next);
   if(isScrubMode(next))showAxes(player.state.axes);
@@ -67,20 +117,18 @@ async function choose(next){
   show(player.state.position);
 }
 $("prepare").onclick=()=>run(async()=>{
+  cancelWindowRequests();
+  if(windowWork)await windowWork;
   message("比較音を計算中…");await audio();
   const source=$("source").value==="file"?sourceFile:makeSource($("source").value,{frequency:Number($("frequency").value)});
   const ir=$("ir").value==="file"?irFile:makeIR($("ir").value,{seconds:Number($("ir-length").value)});
   if(!source||!ir)throw Error("素材を選択してください");
-  const readNumber=id=>{const raw=$(id).value;if(!raw.trim()||!Number.isFinite(Number(raw)))throw Error("数値を入力してください: "+id);return Number(raw);};
-  const next=await prepareComparison(source,ir,{predelay:readNumber("predelay")/1000,
-    irWindow:{start:readNumber("ir-window-start")/1000,duration:readNumber("ir-window-length")/1000}});
+  const next=await prepareComparison(source,ir,{predelay:readNumber("predelay")/1000,irWindow:readWindow()});
   await loadMode(next,mode,{frame:0,resume:false,reset:true});
   session=next;savedAxes={};seek.max=String(next.length);show(0);
   for(const name of ["source","wet"]){$(name+"-seek").max=String(next.length-1);$(name+"-speed").value="1";$(name+"-repeat").checked=false;}
   showAxes(player.state.axes);
-  $("gain").textContent="共通出力ゲイン "+next.gain.applied.toFixed(4)+"（安全減衰を含む）";
-  const range=next.irWindow;
-  $("window-range").textContent="適用IR窓: "+(range.startFrame/next.sampleRate*1000).toFixed(3)+" – "+(range.endFrame/next.sampleRate*1000).toFixed(3)+" ms"+(range.truncated?"（IR終端まで）":"");
+  showWindow(next);
   message("準備済み: "+mode);status.dataset.prepared="true";
 });
 for(const [id,select,set] of [["source-file","source",v=>sourceFile=v],["ir-file","ir",v=>irFile=v]]){
@@ -105,5 +153,7 @@ for(const name of ["source","wet"]){
   speed.onchange=()=>run(async()=>{if(!speed.value.trim())throw Error("速度を入力してください");await player.configureAxis(name,{speed:Number(speed.value)});showAxes(player.state.axes);});
   repeat.onchange=()=>run(async()=>{await player.configureAxis(name,{repeat:repeat.checked});showAxes(player.state.axes);});
 }
-window.addEventListener("pagehide",()=>{player?.dispose();void ctx?.close();},{once:true});
+$("ir-window-scrub").oninput=()=>{$("ir-window-start").value=$("ir-window-scrub").value;requestWindow();};
+for(const id of ["ir-window-start","ir-window-length","ir-calibration"])$(id).onchange=requestWindow;
+window.addEventListener("pagehide",()=>{cancelWindowRequests();player?.dispose();void ctx?.close();},{once:true});
 controls();

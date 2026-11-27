@@ -165,9 +165,19 @@ export async function createScrubPair({ctx,dry,wet,mode,mix,solo,calibration="na
           }
         }
         if(running)await startReady(candidate);
+        let candidateFrame=candidate.receipt?.sourceFrame??source.frame;
+        // Stop or a seek may have moved the installed axis while this candidate waited for readiness.
+        if(!Object.hasOwn(config,"frame")){
+          next.frame=Math.min(length,Math.max(0,Math.round(state()[name].frame)));
+          next.returning=t.returning;source=axisSource(t.signal,next,t.processingMode);plan=source.plan;
+          if(source.frame!==candidate.bridge.latest?.sourceFrame){
+            const receipt=await candidate.bridge.seek(source.frame);
+            candidateFrame=receipt?.sourceFrame??candidate.bridge.latest?.sourceFrame??source.frame;
+          }else candidateFrame=candidate.bridge.latest?.sourceFrame??source.frame;
+        }
         ensure();
         t.route=candidate;t.config=next;t.anchor=plan.anchor;t.ended=false;
-        updateFrame(t,candidate,candidate.receipt?.sourceFrame??source.frame);
+        updateFrame(t,candidate,candidateFrame);
         if(running){
           const now=ctx.currentTime,end=now+.025;
           old.node.gain.setValueAtTime(1,now);old.node.gain.linearRampToValueAtTime(0,end);

@@ -409,6 +409,11 @@ test("Stop settles a staged route whose first render is not ready yet",async()=>
       !document.querySelector("#play").disabled,{timeout:10000});
     await page.select("#solo","wet");
     await page.waitForFunction(()=>!document.querySelector("#solo").disabled,{timeout:10000});
+    await page.waitForFunction(()=>document.querySelector("#status").textContent.startsWith("適用: wet-buffer"),{timeout:10000});
+    const priorWetPosition=await page.$eval("#wet-position",element=>element.textContent);
+    await page.$eval("#wet-seek",field=>{field.value="10000";field.dispatchEvent(new Event("change",{bubbles:true}));});
+    await page.waitForFunction(previous=>document.querySelector("#wet-position").textContent!==previous,
+      {timeout:10000},priorWetPosition);
     await page.click("#play");
     await page.waitForFunction(()=>Number(document.querySelector("#status").dataset.renderedFrames)>0,{timeout:10000});
     await page.select("#wet-loop-style","pingpong");
@@ -438,6 +443,8 @@ test("Stop settles a staged route whose first render is not ready yet",async()=>
     assert.match(await page.$eval("#wet-range-applied",field=>field.textContent),/^往復中:/,
       "Stop should settle the staged route readiness and preserve the requested setting");
     assert.equal(await page.$eval("#play",button=>button.disabled),false,"Play should remain available after Stop");
+    assert.equal(await page.$eval("#source-seek",field=>field.value),"0","Stop should reset the Source axis to zero");
+    assert.equal(await page.$eval("#wet-seek",field=>field.value),"0","Stop should reset the installed staged Wet axis to zero");
     await new Promise(resolve=>setTimeout(resolve,200));
     const postStopProgress=await page.evaluate(portId=>window.__playGate.messages.filter(message=>
       message.portId===portId&&message.type==="progress"&&message.time>=window.__playGate.stoppedAt).length,candidatePort);

@@ -15,18 +15,9 @@ const wave=createSourceWaveView({
   getFrame:()=>isScrubMode(appliedMode)?player?.state.axes?.source?.frame??0:player?.state.position??0,
   getRange:()=>isScrubMode(appliedMode)?player?.state.axes?.source:null,
   onSeek:frame=>{if(!session)return;pendingWave={session,mode:appliedMode,frame};pumpWave();},
-  onRange:async (edge,frame)=>{
-    if(busy||!session||!isScrubMode(appliedMode))return;
-    const current=player.state.axes.source;
-    const start=edge==="a"?Math.min(frame,session.length-1):Math.min(current.rangeStartFrame,frame-1);
-    const end=edge==="b"?Math.max(1,frame):Math.max(current.rangeEndFrame,start+1);
-    await run(async()=>{
-      await player.configureAxis("source",{rangeStartFrame:Math.max(0,start),rangeEndFrame:Math.min(session.length,end)});
-      const a=player.state.axes.source;
-      $("source-range-start").value=String((session.interval.start+a.rangeStartFrame)/session.sampleRate);
-      $("source-range-end").value=String((session.interval.start+a.rangeEndFrame)/session.sampleRate);
-      showAxes(player.state.axes);
-    });
+  onRange:(edge,frame)=>{
+    if(!session||!isScrubMode(appliedMode))return;
+    pendingWave={session,mode:appliedMode,edge,frame};pumpWave();
   }
 });
 function pumpWave(){
@@ -35,7 +26,17 @@ function pumpWave(){
   if(job.session!==session||job.mode!==appliedMode){wave.refresh(true);return;}
   waveSeekWork=true;
   void run(async()=>{
-    if(isScrubMode(job.mode)){await player.configureAxis("source",{frame:job.frame});showAxes(player.state.axes);}
+    if(job.edge){
+      const current=player.state.axes.source;
+      const frame=Math.min(session.length,Math.max(0,job.frame));
+      const start=job.edge==="a"?Math.min(frame,session.length-1):Math.max(0,Math.min(current.rangeStartFrame,frame-1));
+      const end=job.edge==="b"?Math.max(1,frame):Math.min(session.length,Math.max(current.rangeEndFrame,start+1));
+      await player.configureAxis("source",{rangeStartFrame:start,rangeEndFrame:end});
+      const axis=player.state.axes.source;
+      $("source-range-start").value=String((session.interval.start+axis.rangeStartFrame)/session.sampleRate);
+      $("source-range-end").value=String((session.interval.start+axis.rangeEndFrame)/session.sampleRate);
+      showAxes(player.state.axes);
+    }else if(isScrubMode(job.mode)){await player.configureAxis("source",{frame:job.frame});showAxes(player.state.axes);}
     else await player.seek(job.frame);
     show(player.state.position);
   }).finally(()=>{waveSeekWork=false;wave.refresh(true);pumpWave();});

@@ -11,6 +11,11 @@ test("regular entry prepares audio, switches comparison, seeks and retains last 
     const page=await browser.newPage(),errors=[];page.on("pageerror",e=>errors.push(e.message));
     // Observe actual output at the real preview GainNode; no substitute DSP.
     await page.evaluateOnNewDocument(()=>{
+      const originalCeiling=AudioContext.prototype.createWaveShaper;
+      AudioContext.prototype.createWaveShaper=function(){
+        const node=originalCeiling.call(this),tap=this.createAnalyser();tap.fftSize=2048;
+        node.connect(tap);window.__masterOutput=tap;return node;
+      };
       const original=AudioContext.prototype.createGain;
       AudioContext.prototype.createGain=function(){
         const node=original.call(this);
@@ -38,17 +43,37 @@ test("regular entry prepares audio, switches comparison, seeks and retains last 
       const pcm=new Float32Array(tap.fftSize);tap.getFloatTimeDomainData(pcm);
       return pcm.every(Number.isFinite)&&pcm.some(x=>Math.abs(x)>.001)&&pcm.every(x=>Math.abs(x)<=.900001);
     });
+    await page.$eval("#master-volume",el=>{el.value="0";el.dispatchEvent(new Event("input"));});
+    await page.waitForFunction(()=>{
+      const a=window.__masterOutput;if(!a)return false;const pcm=new Float32Array(a.fftSize);
+      a.getFloatTimeDomainData(pcm);return pcm.every(x=>Math.abs(x)<.0001);
+    });
+    await page.$eval("#master-volume",el=>{el.value="100";el.dispatchEvent(new Event("input"));});
+    await page.waitForFunction(()=>{
+      const a=window.__masterOutput,pcm=new Float32Array(a.fftSize);a.getFloatTimeDomainData(pcm);
+      return pcm.some(x=>Math.abs(x)>.001);
+    });
     await page.click("#pause");
     await page.waitForFunction(()=>document.querySelector("#status").textContent==="一時停止"&&!document.querySelector("#seek").disabled);
     await page.$eval("#seek",el=>{el.value="24000";el.dispatchEvent(new Event("input"));el.dispatchEvent(new Event("change"));});
     await page.waitForFunction(()=>!document.querySelector("#seek").disabled);
     const before=await page.$eval("#seek",el=>Number(el.value));
-    const waveState=await page.$eval("#wave-detail",el=>({span:Number(el.dataset.spanFrames),position:Number(el.getAttribute("aria-valuenow")),painted:el.getContext("2d").getImageData(0,0,el.width,el.height).data.some(v=>v!==0)}));
+    const waveState=await page.$eval("#wave-detail",el=>({span:Number(el.dataset.spanFrames),position:Number(el.getAttribute("aria-valuenow")),painted:(()=>{const p=el.getContext("2d").getImageData(0,0,el.width,el.height).data;for(let i=0;i<p.length;i+=4)if(p[i]===117&&p[i+1]===217&&p[i+2]===197)return true;return false;})()}));
     assert.ok(waveState.painted&&waveState.span>0);
     await page.focus("#wave-detail");await page.keyboard.press("Home");
     await page.waitForFunction(()=>Number(document.querySelector("#wave-detail").getAttribute("aria-valuenow"))===0&&!document.querySelector("#seek").disabled);
     await page.keyboard.press("ArrowRight");
     await page.waitForFunction(()=>Number(document.querySelector("#wave-detail").getAttribute("aria-valuenow"))===4800&&!document.querySelector("#seek").disabled);
+    const common=Number(await page.$eval("#seek",el=>el.value));
+    assert.equal(common,71999+4800);
+    const rect=await page.$eval("#wave-detail",el=>{const r=el.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height};});
+    await page.mouse.move(rect.x+rect.w*.65,rect.y+rect.h*.65);
+    await page.mouse.down();await page.mouse.move(rect.x+rect.w*.4,rect.y+rect.h*.65,{steps:5});await page.mouse.up();
+    await page.waitForFunction(()=>Number(document.querySelector("#wave-detail").getAttribute("aria-valuenow"))>4800&&!document.querySelector("#seek").disabled);
+    const dragged=Number(await page.$eval("#wave-detail",el=>el.getAttribute("aria-valuenow")));
+    assert.equal(Number(await page.$eval("#seek",el=>el.value)),71999+dragged);
+    await page.focus("#wave-detail");await page.keyboard.press("Home");await page.waitForFunction(()=>Number(document.querySelector("#wave-detail").getAttribute("aria-valuenow"))===0&&!document.querySelector("#seek").disabled);
+    await page.keyboard.press("ArrowRight");await page.waitForFunction(()=>Number(document.querySelector("#wave-detail").getAttribute("aria-valuenow"))===4800&&!document.querySelector("#seek").disabled);
     await page.click("#wave-zoom-in");
     assert.ok(Number(await page.$eval("#wave-detail",el=>el.dataset.spanFrames))<waveState.span);
     const zoom=await page.$eval("#wave-detail",el=>el.dataset.spanFrames);

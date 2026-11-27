@@ -36,3 +36,5 @@ jobs:
         env:
           HEAD_SHA: ${{ github.sha }}
         run: git diff --check "$HEAD_SHA^" "$HEAD_SHA"
+      - name: Verify pinned audio and UI supply and representative adapters
+        run: node --test shared/atf/*.test.mjs shared/fw/*.test.mjs tests/*.test.mjs

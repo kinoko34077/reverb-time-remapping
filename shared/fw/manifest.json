@@ -1,0 +1,58 @@
+{
+  "repository": "kinoko34077/frequency-warp-vst",
+  "commit": "9e88b9ffd5ebd5f773d5959d1f15208a43c9a950",
+  "files": {
+    "parameter-units.mjs": {
+      "source": "web-demo/parameter-units.mjs",
+      "gitBlob": "dd93886b1ff685d26cd2528b70376bda1d3aff0f"
+    },
+    "parameter-binding.mjs": {
+      "source": "web-demo/parameter-binding.mjs",
+      "gitBlob": "61c45b0bf459cf2139077200a2a8280068bb1629"
+    },
+    "frequency-unit-field.mjs": {
+      "source": "web-demo/frequency-unit-field.mjs",
+      "gitBlob": "9b5a652c7b8c9c2777df5b0a5bb397eefa392d5d"
+    },
+    "parameter-context-menu.mjs": {
+      "source": "web-demo/parameter-context-menu.mjs",
+      "gitBlob": "157be2a58ed07c394f59d932729b103ceb14f0f6"
+    },
+    "parameter-context-menu.css": {
+      "source": "web-demo/parameter-context-menu.css",
+      "gitBlob": "7b96b30d07de46ce48fd469b4e9f7b268430d979"
+    },
+    "digit-wheel-picker.mjs": {
+      "source": "web-demo/digit-wheel-picker.mjs",
+      "gitBlob": "35bc7d285648f5d170f4ec9ddb7e5bbd3dbe05b3"
+    },
+    "digit-wheel-picker.css": {
+      "source": "web-demo/digit-wheel-picker.css",
+      "gitBlob": "8259158167237738b240fa4e7fb8dbb59c05ab0b"
+    },
+    "playback-feedback.mjs": {
+      "source": "web-demo/playback-feedback.mjs",
+      "gitBlob": "b2c86ba49d548a1514f16c5b4366583fed6874be"
+    },
+    "parameter-units.test.mjs": {
+      "source": "web-demo/parameter-units.test.mjs",
+      "gitBlob": "33c8590912e95e3bfa398893166968213b8ac09e"
+    },
+    "parameter-binding.test.mjs": {
+      "source": "web-demo/parameter-binding.test.mjs",
+      "gitBlob": "fa3983a9db4f0e82b9a30f6c7b8e6ebb4bda8058"
+    },
+    "canonical-typed-field.test.mjs": {
+      "source": "web-demo/canonical-typed-field.test.mjs",
+      "gitBlob": "a5eeea580d410e22450ae5958b0158ed6e7acfb0"
+    },
+    "digit-wheel-picker.test.mjs": {
+      "source": "web-demo/digit-wheel-picker.test.mjs",
+      "gitBlob": "58c821322a7cdc7d09f9575e90bbbe83c2138ff1"
+    },
+    "playback-feedback.test.mjs": {
+      "source": "web-demo/playback-feedback.test.mjs",
+      "gitBlob": "abcf1a002b47e20e5428eb09fc5118e7e98dd74a"
+    }
+  }
+}

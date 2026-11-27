@@ -41,4 +41,4 @@ jobs:
       - name: Install existing Audio Lab browser-test dependency
         run: npm install --no-save --no-package-lock puppeteer-core@24
       - name: Verify actual browser convolution against numeric reference
-        run: node --test tests/browser/convolution.browser.test.mjs
+        run: node --test --test-concurrency=1 tests/browser/*.browser.test.mjs

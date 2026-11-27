@@ -45,6 +45,26 @@
     "test-process-cleanup.mjs": {
       "source": "web-demo/test-process-cleanup.mjs",
       "gitBlob": "b706f27d12076a3837919bc974818e7c465e0a83"
+    },
+    "source-pcm-bridge.mjs": {
+      "source": "web-demo/source-pcm-bridge.mjs",
+      "gitBlob": "a5d8e33e312216281a5ed04e2d878c84cb18c4c4"
+    },
+    "source-pcm.worklet.js": {
+      "source": "web-demo/source-pcm.worklet.js",
+      "gitBlob": "7cf8c345aa044ab9baf906c0da25b1d11cdbd2bd"
+    },
+    "source-dual.mjs": {
+      "source": "web-demo/source-dual.mjs",
+      "gitBlob": "afa366b1d6952a9fab080e15750627c326f76764"
+    },
+    "source-rust.mjs": {
+      "source": "web-demo/source-rust.mjs",
+      "gitBlob": "efc5e56893a8ea28a36c1d833112446444dd999d"
+    },
+    "source-pcm-bridge.test.mjs": {
+      "source": "web-demo/source-pcm-bridge.test.mjs",
+      "gitBlob": "e76eb345ff3b971c06db884b6372090b6a202745"
     }
   }
 }

@@ -57,6 +57,10 @@
     "dsp.mjs": {
       "source": "web-demo/dsp.mjs",
       "gitBlob": "15b106bd3afb562c8e6d44e9aa3792a45ae9c076"
+    },
+    "wav-chunk-source.mjs": {
+      "source": "web-demo/wav-chunk-source.mjs",
+      "gitBlob": "70f417f3c0996598dbc4a65bc094246a0e5ddb00"
     }
   }
 }

@@ -1,5 +1,6 @@
 import {createSpectralTimePitch} from "../shared/atf/source-spectral.mjs";
 import {createSourceTimeline,validatePlaybackSpeed} from "../shared/atf/source-timeline.mjs";
+import {createReflectedPCMSource} from "../shared/atf/reflected-pcm-source.mjs";
 import {validatePCM,checkPCMBudget,DEFAULT_PCM_BUDGET_BYTES,renderConvolution} from "./convolution.mjs";
 
 // R4a: finite kernel generation, not a Wet-cache effect and not the
@@ -13,11 +14,11 @@ export function renderIRSpectral(ir,settings={}){
   validatePlaybackSpeed(speed);
   if(!Number.isSafeInteger(outputFrames)||outputFrames<1||
      !Number.isSafeInteger(startFrame)||startFrame<0||startFrame>=h.length||
-     !["zero","repeat"].includes(boundary))throw RangeError("invalid finite IR trajectory");
+     !["zero","repeat","pingpong"].includes(boundary))throw RangeError("invalid finite IR trajectory");
   if(!Number.isSafeInteger(loopStartFrame)||!Number.isSafeInteger(loopEndFrame)||
      loopStartFrame<0||loopStartFrame>=loopEndFrame||loopEndFrame>h.length)
     throw RangeError("invalid IR repeat interval");
-  if(boundary==="repeat"&&(startFrame<loopStartFrame||startFrame>=loopEndFrame))
+  if(boundary!=="zero"&&(startFrame<loopStartFrame||startFrame>=loopEndFrame))
     throw RangeError("IR start outside repeat interval");
   if(![1024,2048,4096,8192].includes(fftFrames)||!Number.isInteger(hopFrames)||
     hopFrames<1||fftFrames%hopFrames!==0||hopFrames>fftFrames/4||typeof phaseLock!=="boolean")
@@ -28,9 +29,15 @@ export function renderIRSpectral(ir,settings={}){
   checkPCMBudget(4*channelsCount*(h.length+outputFrames)+
     8*fftFrames*(channelsCount*12+16),maxBytes);
   const channels=h.channels.map(()=>new Float32Array(outputFrames));
-  const clock=createSourceTimeline({sourceFrames:h.length,sourceSampleRate:h.sampleRate,
-    outputSampleRate:h.sampleRate,startFrame,speed,loopStartFrame,loopEndFrame,
-    loopEnabled:boundary==="repeat"});
+  // Reflect only the analysis center; never analyze the virtual reflected PCM.
+  // Both coordinate mapping and phase synthesis are owned by shared ATF.
+  const reflected=boundary==="pingpong"?createReflectedPCMSource({
+    channels:h.channels,startFrame:loopStartFrame,endFrame:loopEndFrame}):null;
+  const clock=createSourceTimeline({sourceFrames:reflected?.sourceFrames??h.length,
+    sourceSampleRate:h.sampleRate,outputSampleRate:h.sampleRate,
+    startFrame:reflected?reflected.toVirtualFrame(startFrame):startFrame,speed,
+    loopStartFrame:reflected?0:loopStartFrame,loopEndFrame:reflected?.sourceFrames??loopEndFrame,
+    loopEnabled:boundary!=="zero"});
   let renderedFrames=0;
   let algorithm="exact-raw";
   // Identity at ordinary forward scan is a numerical requirement, not a
@@ -42,7 +49,8 @@ export function renderIRSpectral(ir,settings={}){
     clock.advance(renderedFrames);
   }else{
     const synth=createSpectralTimePitch({sourceSampleRate:h.sampleRate,outputSampleRate:h.sampleRate,
-      channelCount:channelsCount,fftFrames,hopFrames,phaseLock});
+      channelCount:channelsCount,fftFrames,hopFrames,phaseLock,
+      mapAnalysisCenter:reflected?.toSourceFrame??null});
     algorithm=synth.state.algorithm;
     const read=(ch,index)=>h.channels[ch][index];
     // The shared synth reads the original complex local context. The age
@@ -66,7 +74,8 @@ export function renderIRSpectral(ir,settings={}){
   if(!channels.every(c=>c.every(Number.isFinite)))throw Error("nonfinite spectral IR");
   return {origin:0,sampleRate:h.sampleRate,channels,trajectory:{
     startFrame,speed,boundary,loopStartFrame,loopEndFrame,outputFrames,renderedFrames,
-    endFrame:clock.state.sourceFrame,algorithm,fftFrames,hopFrames,phaseLock}};
+    endFrame:reflected?reflected.toSourceFrame(clock.state.sourceFrame):clock.state.sourceFrame,
+    algorithm,fftFrames,hopFrames,phaseLock}};
 }
 
 export async function renderSpectralWet(input,ir,settings={},convolutionOptions={}){

@@ -127,3 +127,23 @@ test("IR spectral sparse-reflection smearing is measured rather than treated as 
   }
   console.log("R4 sparse reflection energy-spread proxies",JSON.stringify({original,measurements}));
 });
+
+test("IR spectral pingpong maps only analysis centers in original IR context",()=>{
+  const h=tone(),center=24000,outputFrames=8192;
+  const hold=renderIRSpectral(h,{startFrame:center,speed:0,outputFrames});
+  const one=renderIRSpectral(h,{startFrame:center,speed:8,outputFrames,boundary:"pingpong",
+    loopStartFrame:center,loopEndFrame:center+1});
+  assert.deepEqual(one.channels,hold.channels);
+  assert.equal(one.trajectory.endFrame,center);
+  const a=center-200,b=center+201,span=b-a-1,period=2*span;
+  for(const speed of [-1,.5,2]){
+    const k=renderIRSpectral(h,{startFrame:center,speed,outputFrames,boundary:"pingpong",loopStartFrame:a,loopEndFrame:b});
+    const u=((center-a+outputFrames*speed)%period+period)%period;
+    assert.equal(k.trajectory.endFrame,a+Math.min(u,period-u));
+    assert.equal(k.trajectory.renderedFrames,outputFrames);
+    const l=k.channels[0].subarray(2048),r=k.channels[1].subarray(2048);
+    assert.ok(rms(l)>.04);assert.ok(energy(l,440)>3*Math.max(energy(l,220),energy(l,880)));
+    assert.ok(l.every((v,i)=>Math.abs(v+r[i])<1e-5));
+  }
+  assert.throws(()=>renderIRSpectral(h,{startFrame:center,boundary:"pingpong",loopStartFrame:center+1}),/outside repeat/);
+});

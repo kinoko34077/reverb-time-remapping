@@ -52,5 +52,6 @@ test("equal raw anchors group exactly, not input × IR allocation; finite histor
   assert.throws(()=>renderIntegratedRaw(x,h,clock,{maxTerms:10}),/work budget/);
   assert.throws(()=>renderIntegratedRaw(x,h,clock,{maxBytes:8}),/budget/);
   assert.throws(()=>renderIntegratedRaw(x,h,Float64Array.of(0,NaN)),/finite clock/);
+  assert.throws(()=>renderIntegratedRaw(pcm([[0]]),h,[0,,1]),/finite clock/);
   assert.throws(()=>renderIntegratedRaw(x,h,clock,{range:{lo:1,hi:1}}),/IR range/);
 });

@@ -17,7 +17,9 @@ export function renderIntegratedRaw(input,ir,clock,{
   const x=validatePCM(input),h=validatePCM(ir);
   if(x.sampleRate!==h.sampleRate||h.origin!==0)throw RangeError("invalid integrated PCM coordinates");
   if(!(clock instanceof Float64Array)&&!Array.isArray(clock))throw RangeError("finite clock history required");
-  if(!clock.length||!clock.every(Number.isFinite))throw RangeError("finite clock history required");
+  if(!clock.length)throw RangeError("finite clock history required");
+  // Array.every skips holes; missing clock history must never become silence.
+  for(let i=0;i<clock.length;i++)if(!Number.isFinite(clock[i]))throw RangeError("finite clock history required");
   integer(clockOrigin,"clock origin");integer(start,"output start");integer(delay,"placement");
   const clockEnd=integer(clockOrigin+clock.length,"clock end");
   count??=clockEnd-start;integer(count,"output count");

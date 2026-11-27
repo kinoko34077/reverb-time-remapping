@@ -2,7 +2,7 @@
 <html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Reverb Time Remapping</title><link rel="stylesheet" href="style.css"></head>
 <body><main>
-<header><h1>Reverb Time Remapping</h1><p>正規版・比較試聴（R3b・時間操作） <a href="../prototype/">Muse実験版</a></p></header>
+<header><h1>Reverb Time Remapping</h1><p>正規版・比較試聴（R4b・IR再合成） <a href="../prototype/">Muse実験版</a></p></header>
 <section aria-label="素材"><h2>音源 / IR</h2><div class="fields">
 <label>原音<select id="source"><option value="impulse">Impulse</option><option value="sine">Sine</option><option value="square">Square</option><option value="saw">Saw</option><option value="noise">Noise</option><option value="chord">Chord</option><option value="piano-like">Piano風（合成）</option><option value="drums-like">Drums風（合成）</option><option value="file" disabled>読込WAV</option></select></label>
 <label>原音WAV<input id="source-file" type="file" accept=".wav,audio/wav"></label>
@@ -17,7 +17,7 @@
 <button id="prepare" type="button">比較音を準備</button>
 </div></section>
 <section aria-label="比較試聴"><h2>比較試聴</h2><div class="modes" role="group" aria-label="方式">
-<button data-mode="dry" aria-pressed="true">Dry</button><button data-mode="normal" aria-pressed="false">Normal</button><button data-mode="reverse" aria-pressed="false">Reverse</button><button data-mode="ir-window" aria-pressed="false">IR Window</button><button data-mode="wet-buffer" aria-pressed="false">Wet Buffer</button><button data-mode="wet-spectral" aria-pressed="false">Wet Spectral</button>
+<button data-mode="dry" aria-pressed="true">Dry</button><button data-mode="normal" aria-pressed="false">Normal</button><button data-mode="reverse" aria-pressed="false">Reverse</button><button data-mode="ir-window" aria-pressed="false">IR Window</button><button data-mode="wet-buffer" aria-pressed="false">Wet Buffer</button><button data-mode="wet-spectral" aria-pressed="false">Wet Spectral</button><button data-mode="ir-spectral" aria-pressed="false">IR Spectral</button>
 </div><div class="fields">
 <label>Wet (%)<input id="wet" inputmode="decimal" type="text"></label>
 <label>試聴<select id="solo"><option value="mix">Dry + Wet</option><option value="dry">Dryのみ</option><option value="wet">Wetのみ</option></select></label><button id="apply-mix" disabled>Wet設定を反映</button>
@@ -46,6 +46,20 @@
 </div><div id="ir-live" hidden>
 <label>IR窓の開始位置 (ms) <output id="window-request">—</output><input id="ir-window-scrub" type="range" min="0" max="1" step="any" value="0" disabled></label>
 <p class="note">再生中も窓を更新できます。新しい有限キャッシュの準備まで前の音を維持します。</p>
+</div><div id="ir-spectral-live" hidden>
+<h2>IRスペクトル再合成</h2>
+<div class="fields">
+<label>IR参照開始 (ms)<input id="ir-spectral-start" type="number" min="0" step="any" value="0"></label>
+<label>IR参照開始 <output id="ir-spectral-request">—</output><input id="ir-spectral-scrub" type="range" min="0" max="1" step="any" value="0"></label>
+<label>IR参照速度 (×)<input id="ir-spectral-speed" type="number" min="-8" max="8" step="any" value="1"></label>
+<label>再合成長 (ms)<input id="ir-spectral-length" type="number" min="0.01" step="any" value="100"></label>
+<label>IR範囲外<select id="ir-spectral-boundary"><option value="zero">無音</option><option value="repeat">反復</option></select></label>
+<label>IR反復開始 (ms)<input id="ir-spectral-range-start" type="number" min="0" step="any" value="0"></label>
+<label>IR反復終了 (ms)<input id="ir-spectral-range-end" type="number" min="0.01" step="any" value="100"></label>
+<label>分析窓 (sample)<select id="ir-spectral-fft"><option>1024</option><option selected>2048</option><option>4096</option><option>8192</option></select></label>
+<label>IR再合成音量<select id="ir-spectral-calibration"><option value="natural">自然減衰</option><option value="compensated">RMS補正</option></select></label>
+</div><p><output id="ir-spectral-applied">IR未準備</output></p>
+<p class="note">0×でも局所波形の振動は継続。IR自身を有限カーネルへ再合成し、原音に畳み込みます。長さは共通比較範囲のため元IR長以内。計算中は旧音を維持。既発生Wetの巻戻しとは異なります。</p>
 </div><output id="gain">—</output><p><output id="window-range">IR窓: 未準備</output></p><p id="status" role="status" aria-live="polite">比較音を準備してください。</p>
-<p class="note">有限キャッシュを使用。IR Windowは選択区間を先頭へ移して畳み込む方式。IR Window選択中は準備済み素材から部分キャッシュを更新。発生済み残響の巻戻し・IR再合成は後続工程。切替には短い準備間隔があります。</p></section>
+<p class="note">有限キャッシュを使用。IR Windowは選択区間を先頭へ移して畳み込む方式。IR Window選択中は準備済み素材から部分キャッシュを更新。発生済み残響の巻戻しは後続工程。切替には短い準備間隔があります。</p></section>
 </main><script type="module" src="main.mjs"></script></body></html>

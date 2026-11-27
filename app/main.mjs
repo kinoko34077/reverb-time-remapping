@@ -1,6 +1,7 @@
 import {makeSource,makeIR,readLocalWav} from "../src/materials.mjs";
 import {prepareComparison} from "../src/comparison-session.mjs";
 import {createPreviewPlayer} from "../src/preview-player.mjs";
+import {createIRSpectralWorker} from "../src/ir-spectral-worker.mjs";
 import {isScrubMode} from "../src/scrub-pair.mjs";
 import {secondsToFrames} from "../src/convolution.mjs";
 import {createWetMixBinding,mountWetMixField} from "../src/wet-mix.mjs";
@@ -9,6 +10,9 @@ let ctx,player,session,mode="dry",appliedMode="dry",busy=false,seeking=false,sou
 const status=$("status"),seek=$("seek");
 let savedAxes={};const dragging=new Set();
 let windowRevision=0,windowWork=null,queuedWindow=null,windowApplying=false;
+const spectralWorker=createIRSpectralWorker();
+const spectralFields=["ir-spectral-start","ir-spectral-speed","ir-spectral-length","ir-spectral-boundary",
+  "ir-spectral-range-start","ir-spectral-range-end","ir-spectral-fft","ir-spectral-calibration","ir-spectral-scrub"];
 function cancelWindowRequests(){++windowRevision;queuedWindow=null;}
 function readNumber(id){
   const raw=$(id).value;
@@ -27,35 +31,64 @@ function showWindow(next,{latest=true}={}){
   $("ir-window-scrub").value=$("ir-window-start").value;
   if(latest)$("window-request").textContent=$("ir-window-start").value+" ms";
 }
-function requestWindow(){
-  if(!session||mode!=="ir-window")return;
+function readSpectral(){
+  const frames=id=>secondsToFrames(readNumber(id)/1000,session.sampleRate);
+  const fftFrames=readNumber("ir-spectral-fft");
+  return {startFrame:frames("ir-spectral-start"),speed:readNumber("ir-spectral-speed"),
+    outputFrames:frames("ir-spectral-length"),boundary:$("ir-spectral-boundary").value,
+    loopStartFrame:frames("ir-spectral-range-start"),loopEndFrame:frames("ir-spectral-range-end"),
+    fftFrames,hopFrames:fftFrames/8,calibration:$("ir-spectral-calibration").value};
+}
+function showSpectral(next,{reset=false,latest=true}={}){
+  const s=next.irSpectral,ms=frame=>frame*1000/next.sampleRate;
+  if(reset){
+    for(const id of ["ir-spectral-start","ir-spectral-scrub"])$(id).max=String(ms(next.irFrames-1));
+    for(const id of ["ir-spectral-length","ir-spectral-range-end"])$(id).max=String(ms(next.irFrames));
+    $("ir-spectral-range-start").max=String(ms(next.irFrames-1));
+    $("ir-spectral-start").value=String(ms(s.startFrame));$("ir-spectral-scrub").value=String(ms(s.startFrame));
+    $("ir-spectral-speed").value=String(s.speed);$("ir-spectral-length").value=String(ms(s.outputFrames));
+    $("ir-spectral-boundary").value=s.boundary;$("ir-spectral-range-start").value=String(ms(s.loopStartFrame));
+    $("ir-spectral-range-end").value=String(ms(s.loopEndFrame));$("ir-spectral-fft").value=String(s.fftFrames);
+    $("ir-spectral-calibration").value=next.irSpectralCalibration;
+  }
+  if(latest)$("ir-spectral-request").textContent="適用済み";
+  $("ir-spectral-applied").textContent="適用IR: "+ms(s.startFrame).toFixed(3)+" ms / "+s.speed+"× / "+
+    ms(s.outputFrames).toFixed(3)+" ms / "+s.boundary+" / "+s.algorithm+
+    (next.irSpectralCalibration==="compensated"?" / RMS補正 ×"+next.irSpectralScale.toFixed(3):" / 自然減衰");
+}
+function requestWindow(kind="ir-window"){
+  if(!session||mode!==kind)return;
   try{
-    const settings=readWindow();
-    queuedWindow={revision:++windowRevision,base:session,settings};
-    $("window-request").textContent=(settings.start*1000).toFixed(3)+" ms（要求）";
-    message("IR窓を計算中…（旧音を維持）");
+    const settings=kind==="ir-spectral"?readSpectral():readWindow();
+    queuedWindow={revision:++windowRevision,base:session,settings,mode:kind};
+    if(kind==="ir-window")$("window-request").textContent=(settings.start*1000).toFixed(3)+" ms（要求）";
+    else $("ir-spectral-request").textContent="計算要求: "+$("ir-spectral-start").value+" ms / "+settings.speed+"×";
+    message((kind==="ir-spectral"?"IR再合成":"IR窓")+"を計算中…（旧音を維持）");
     pumpWindow();
-  }catch(error){cancelWindowRequests();message("IR窓を更新できません: "+error.message);}
+  }catch(error){cancelWindowRequests();message("IRを更新できません: "+error.message);}
 }
 function pumpWindow(){
   if(busy||windowWork||!queuedWindow)return;
   const job=queuedWindow;queuedWindow=null;
   windowWork=(async()=>{
     try{
-      const next=await job.base.withIRWindow(job.settings);
-      if(job.revision!==windowRevision||mode!=="ir-window")return;
+      const next=job.mode==="ir-spectral"?
+        await job.base.withIRSpectral(job.settings,spectralWorker.render):
+        await job.base.withIRWindow(job.settings);
+      if(job.revision!==windowRevision||mode!==job.mode)return;
       if(busy){if(!queuedWindow)queuedWindow=job;return;}
       windowApplying=true;
       try{
         await run(async()=>{
-          if(job.revision!==windowRevision||mode!=="ir-window")return;
+          if(job.revision!==windowRevision||mode!==job.mode)return;
           const accepted=await player.load(next.select(mode,binding.value,$("solo").value),next.gain.applied,{crossfade:true});
           if(!accepted)return;
-          session=next;showWindow(next,{latest:job.revision===windowRevision});show(player.state.position);
-          if(job.revision===windowRevision)message("IR窓を適用: "+next.irCalibration);
+          session=next;showWindow(next,{latest:job.mode==="ir-window"&&job.revision===windowRevision});
+          showSpectral(next,{latest:job.mode==="ir-spectral"&&job.revision===windowRevision});show(player.state.position);
+          if(job.revision===windowRevision)message(job.mode==="ir-spectral"?"IR再合成を適用":"IR窓を適用: "+next.irCalibration);
         });
       }finally{windowApplying=false;controls();}
-    }catch(error){if(job.revision===windowRevision)message("IR窓を更新できません: "+error.message);}
+    }catch(error){if(job.revision===windowRevision)message((job.mode==="ir-spectral"?"IR再合成":"IR窓")+"を更新できません: "+error.message);}
   })().finally(()=>{windowWork=null;pumpWindow();});
 }
 function showAxes(axes){
@@ -84,6 +117,8 @@ function controls(){
   for(const b of document.querySelectorAll("[data-mode]")){b.disabled=busy||!session;b.setAttribute("aria-pressed",String(b.dataset.mode===appliedMode));}
   for(const id of ["play","pause","stop","seek","apply-mix"])$(id).disabled=busy||!session;
   $("ir-live").hidden=appliedMode!=="ir-window";
+  $("ir-spectral-live").hidden=appliedMode!=="ir-spectral";
+  for(const id of spectralFields)$(id).disabled=(busy&&!windowApplying)||!session||appliedMode!=="ir-spectral";
   $("ir-window-scrub").disabled=(busy&&!windowApplying)||!session||appliedMode!=="ir-window";
   if(windowApplying)for(const id of ["ir-window-start","ir-window-length","ir-calibration"])$(id).disabled=false;
   $("scrub-axes").hidden=!isScrubMode(appliedMode);
@@ -123,7 +158,7 @@ async function loadMode(target,next,options={}){
 }
 async function choose(next){
   if(!session)return;
-  if(next!==mode)cancelWindowRequests();
+  if(next!==mode){cancelWindowRequests();if(mode==="ir-spectral")spectralWorker.cancel();}
   await audio();
   if(next!==mode||!isScrubMode(next)||!player.setMix(binding.value,$("solo").value))await loadMode(session,next);
   if(isScrubMode(next)){showAxes(player.state.axes);showCalibration(player.state.calibration);}
@@ -132,7 +167,7 @@ async function choose(next){
   show(player.state.position);
 }
 $("prepare").onclick=()=>run(async()=>{
-  cancelWindowRequests();
+  cancelWindowRequests();spectralWorker.cancel();
   if(windowWork)await windowWork;
   message("比較音を計算中…");await audio();
   const source=$("source").value==="file"?sourceFile:makeSource($("source").value,{frequency:Number($("frequency").value)});
@@ -150,7 +185,7 @@ $("prepare").onclick=()=>run(async()=>{
     $(name+"-range-start").value=String(a);$(name+"-range-end").value=String(b);
   }
   showAxes(player.state.axes);showCalibration(player.state.calibration);
-  showWindow(next);
+  showWindow(next);showSpectral(next,{reset:true});
   message("準備済み: "+mode);status.dataset.prepared="true";
 });
 for(const [id,select,set] of [["source-file","source",v=>sourceFile=v],["ir-file","ir",v=>irFile=v]]){
@@ -192,6 +227,11 @@ $("wet-calibration").onchange=()=>run(async()=>{
   showCalibration(player.state.calibration);
 });
 $("ir-window-scrub").oninput=()=>{$("ir-window-start").value=$("ir-window-scrub").value;requestWindow();};
-for(const id of ["ir-window-start","ir-window-length","ir-calibration"])$(id).onchange=requestWindow;
-window.addEventListener("pagehide",()=>{cancelWindowRequests();player?.dispose();void ctx?.close();},{once:true});
+for(const id of ["ir-window-start","ir-window-length","ir-calibration"])$(id).onchange=()=>requestWindow();
+$("ir-spectral-scrub").oninput=()=>{$("ir-spectral-start").value=$("ir-spectral-scrub").value;requestWindow("ir-spectral");};
+for(const id of spectralFields.filter(id=>id!=="ir-spectral-scrub"))$(id).onchange=()=>{
+  if(id==="ir-spectral-start")$("ir-spectral-scrub").value=$(id).value;
+  requestWindow("ir-spectral");
+};
+window.addEventListener("pagehide",()=>{cancelWindowRequests();spectralWorker.dispose();player?.dispose();void ctx?.close();},{once:true});
 controls();

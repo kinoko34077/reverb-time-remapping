@@ -83,3 +83,20 @@ test("IR window refresh reuses base signals and applies common RMS correction ex
   const silent=extractIRWindow(weak,{start:2/sr,duration:1/sr,calibration:"compensated"});
   assert.equal(silent.scale,1);assert.equal(silent.channels[0][0],0);
 });
+
+test("IR spectral session preserves the common interval and other caches, with explicit correction",async()=>{
+  const ir={sampleRate:sr,origin:0,channels:[Float32Array.of(1,1,.1,.1)]};
+  const x={sampleRate:sr,origin:0,channels:[Float32Array.of(1)]};
+  const c=await prepareComparison(x,ir,{renderMono:mono,predelay:-2/sr});
+  assert.equal(c.signals["ir-spectral"],c.signals.normal);
+  const frozen=await c.withIRSpectral({startFrame:2,speed:1,outputFrames:2,calibration:"compensated"});
+  assert.equal(frozen.interval,c.interval);assert.equal(frozen.signals.dry,c.signals.dry);
+  assert.equal(frozen.signals["ir-window"],c.signals["ir-window"]);
+  assert.ok(Math.abs(frozen.irSpectralScale-Math.sqrt(.505)/.1)<1e-6);
+  assert.equal(frozen.irSpectral.outputFrames,2);
+  const window=await frozen.withIRWindow({start:1/sr,duration:1/sr});
+  assert.equal(window.signals["ir-spectral"],frozen.signals["ir-spectral"]);
+  await assert.rejects(window.withIRSpectral({outputFrames:5}),/IR長以内/);
+  await assert.rejects(window.withIRSpectral({startFrame:5}),/trajectory/);
+  assert.equal(c.irSpectral.startFrame,0);
+});

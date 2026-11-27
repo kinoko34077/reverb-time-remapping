@@ -73,6 +73,26 @@
     "reflected-pcm-source.test.mjs": {
       "source": "web-demo/reflected-pcm-source.test.mjs",
       "gitBlob": "9247e469ccd44734d219c96b9f8f5cf064628355"
+    },
+    "player-wave-editor.mjs": {
+      "source": "web-demo/player-wave-editor.mjs",
+      "gitBlob": "eeb687009ea0aa0d6ca8167d5c2c67f3fc2b909a"
+    },
+    "player-wave-editor.test.mjs": {
+      "source": "web-demo/player-wave-editor.test.mjs",
+      "gitBlob": "189c2b9f7c74300ba18eb1a8335ae5441aa555b8"
+    },
+    "press-repeat.mjs": {
+      "source": "web-demo/press-repeat.mjs",
+      "gitBlob": "7a758875667c04987da0c17812d6ffb683e3d4dd"
+    },
+    "scrub-kinetics.mjs": {
+      "source": "web-demo/scrub-kinetics.mjs",
+      "gitBlob": "25d1abaf8f27c05186897533e8e895a4480444ec"
+    },
+    "scrub-kinetics.test.mjs": {
+      "source": "web-demo/scrub-kinetics.test.mjs",
+      "gitBlob": "a69a6f7460dba0a8e8efddcd4e3433a8f55aa5ba"
     }
   }
 }

@@ -26,3 +26,6 @@ IR窓のカーネル補正とは別に、Wet Buffer/Spectralの元Wet参照位�
 
 ## P0 音声入力復旧（#21）
 原音・IRともWAV/MP3を有限比較に入力可能。WAVは既存FW reader、圧縮音源はMuse先行版と同じブラウザ標準decodeAudioDataで処理レートへ変換する。その他の形式はブラウザ依存で保証しない。モノラル・ステレオのみ。読込失敗時は前回成功した素材と比較を保持。読込時の推定枠を既存比較と同じ64MiB定数へ統一し、同レートWAVでは不要な変換用割当を計上しない。native decode内部のピークメモリは事前に保証できない。比較準備の別のメモリ判定・長尺段階読込・自動準備・UI刷新は別工程。
+
+## P1-A1 原音波形・独立出力音量
+ATF player-wave-editor（正本テスト・press-repeat/scrub-kinetics依存も固定供給）を単一永続Source DOMへ接続。原素材実PCM、0始点の素材内時刻とsigned比較位置の変換、タップ/連続ドラッグ/keyboard/zoom/resize。連動モードでは共通seek、Wet独立モードではSourceのみseek。波形の範囲端は独立Source反復のときだけ接続。素材外は開始前/終了後と明示。共通出力gainと独立ユーザー音量を分離し既存安全段の前で適用。既存の全mode・数値操作を保持する。ATF固有app全体のCSSではなく必要な構造のRTRスコープ付き接続スタイル。これはP1-Aの代表単位で、全体波形/IR・Wet・A/B、自動準備、即時mix、全体busyの解消・上流editorの複数mount/dispose契約は後続。出力音量は現在の減衰専用で0〜100%、増幅は安全段/校正設計と別評価。

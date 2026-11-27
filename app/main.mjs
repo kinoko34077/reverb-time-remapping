@@ -5,10 +5,42 @@ import {createIRSpectralWorker} from "../src/ir-spectral-worker.mjs";
 import {isScrubMode} from "../src/scrub-pair.mjs";
 import {secondsToFrames} from "../src/convolution.mjs";
 import {createWetMixBinding,mountWetMixField} from "../src/wet-mix.mjs";
+import {createSourceWaveView} from "./source-wave-view.mjs";
 const $=id=>document.getElementById(id);
 let ctx,player,session,mode="dry",appliedMode="dry",busy=false,seeking=false,sourceFile=null,irFile=null;
 const status=$("status"),seek=$("seek");
 let savedAxes={};const dragging=new Set();
+let pendingWave=null,waveSeekWork=false;
+const wave=createSourceWaveView({
+  getFrame:()=>isScrubMode(appliedMode)?player?.state.axes?.source?.frame??0:player?.state.position??0,
+  getRange:()=>isScrubMode(appliedMode)?player?.state.axes?.source:null,
+  onSeek:frame=>{if(!session)return;pendingWave={session,mode:appliedMode,frame};pumpWave();},
+  onRange:(edge,frame)=>{
+    if(!session||!isScrubMode(appliedMode))return;
+    pendingWave={session,mode:appliedMode,edge,frame};pumpWave();
+  }
+});
+function pumpWave(){
+  if(busy||waveSeekWork||!pendingWave)return;
+  const job=pendingWave;pendingWave=null;
+  if(job.session!==session||job.mode!==appliedMode){wave.refresh(true);return;}
+  waveSeekWork=true;
+  void run(async()=>{
+    if(job.edge){
+      const current=player.state.axes.source;
+      const frame=Math.min(session.length,Math.max(0,job.frame));
+      const start=job.edge==="a"?Math.min(frame,session.length-1):Math.max(0,Math.min(current.rangeStartFrame,frame-1));
+      const end=job.edge==="b"?Math.max(1,frame):Math.min(session.length,Math.max(current.rangeEndFrame,start+1));
+      await player.configureAxis("source",{rangeStartFrame:start,rangeEndFrame:end});
+      const axis=player.state.axes.source;
+      $("source-range-start").value=String((session.interval.start+axis.rangeStartFrame)/session.sampleRate);
+      $("source-range-end").value=String((session.interval.start+axis.rangeEndFrame)/session.sampleRate);
+      showAxes(player.state.axes);
+    }else if(isScrubMode(job.mode)){await player.configureAxis("source",{frame:job.frame});showAxes(player.state.axes);}
+    else await player.seek(job.frame);
+    show(player.state.position);
+  }).finally(()=>{waveSeekWork=false;wave.refresh(true);pumpWave();});
+}
 let windowRevision=0,windowWork=null,queuedWindow=null,windowApplying=false;
 const spectralWorker=createIRSpectralWorker();
 const spectralFields=["ir-spectral-start","ir-spectral-speed","ir-spectral-length","ir-spectral-boundary",
@@ -84,7 +116,7 @@ function pumpWindow(){
           if(job.revision!==windowRevision||mode!==job.mode)return;
           const accepted=await player.load(next.select(mode,binding.value,$("solo").value),next.gain.applied,{crossfade:true});
           if(!accepted)return;
-          session=next;syncComparisonRange(next);
+          session=next;pendingWave=null;syncComparisonRange(next);wave.setInterval(next);
           showWindow(next,{latest:job.mode==="ir-window"&&job.revision===windowRevision});
           showSpectral(next,{latest:job.mode==="ir-spectral"&&job.revision===windowRevision});show(player.state.position);
           if(job.revision===windowRevision)message(job.mode==="ir-spectral"?"IR再合成を適用":"IR窓を適用: "+next.irCalibration);
@@ -149,16 +181,17 @@ function show(frame){
 async function run(fn){
   if(busy)return;busy=true;controls();
   try{await fn();}catch(e){message("処理できません: "+e.message);}
-  finally{busy=false;controls();pumpWindow();}
+  finally{busy=false;controls();pumpWindow();pumpWave();}
 }
 async function audio(){
   if(!ctx){ctx=new AudioContext();player=createPreviewPlayer(ctx,{onState:s=>{
     if(s.error){message("再生エラー: "+s.error);return;}
-    show(s.position);showAxes(s.axes);showCalibration(s.calibration);
+    show(s.position);showAxes(s.axes);showCalibration(s.calibration);wave.refresh();
     if(s.event?.type==="render-applied"&&s.event.missingFramesInBlock===0)
       status.dataset.renderApplied=String(s.event.requestId);
     if(s.event?.type==="progress")status.dataset.renderedFrames=String(s.event.renderedFrames);
   }});}
+  player.setVolume(Number($("master-volume").value)/100);
   await ctx.resume();
 }
 const binding=createWetMixBinding();
@@ -177,7 +210,7 @@ async function choose(next){
   await audio();
   if(next!==mode||!isScrubMode(next)||!player.setMix(binding.value,$("solo").value))await loadMode(session,next);
   if(isScrubMode(next)){showAxes(player.state.axes);showCalibration(player.state.calibration);}
-  mode=appliedMode=next;
+  mode=appliedMode=next;pendingWave=null;wave.refresh(true);
   message("適用: "+mode+" / Wet "+(binding.value*100).toFixed(3)+"%");
   show(player.state.position);
 }
@@ -190,7 +223,8 @@ $("prepare").onclick=()=>run(async()=>{
   if(!source||!ir)throw Error("素材を選択してください");
   const next=await prepareComparison(source,ir,{predelay:readNumber("predelay")/1000,irWindow:readWindow()});
   await loadMode(next,mode,{frame:0,resume:false,reset:true});
-  session=next;savedAxes={};syncComparisonRange(next,{reset:true});show(0);
+  session=next;savedAxes={};pendingWave=null;syncComparisonRange(next,{reset:true});show(0);
+  wave.setSource(source,next);
   for(const name of ["source","wet"]){
     $(name+"-speed").value="1";$(name+"-repeat").checked=false;$(name+"-loop-style").value="repeat";
   }
@@ -206,6 +240,11 @@ for(const [id,select,set] of [["source-file","source",v=>sourceFile=v],["ir-file
   });
 }
 for(const button of document.querySelectorAll("[data-mode]"))button.onclick=()=>run(()=>choose(button.dataset.mode));
+$("master-volume").oninput=()=>{
+  const value=Number($("master-volume").value);
+  $("master-volume-value").textContent=value.toFixed(1).replace(/\.0$/,"")+"%";
+  player?.setVolume(value/100);
+};
 $("solo").onchange=()=>run(()=>choose(mode));
 $("apply-mix").onclick=()=>run(()=>choose(mode));
 $("play").onclick=()=>run(async()=>{await audio();if(!isScrubMode(mode)&&player.state.position>=session.length)await player.seek(0);await player.play();message("再生要求を受理");});
@@ -243,5 +282,5 @@ for(const id of spectralFields.filter(id=>id!=="ir-spectral-scrub"))$(id).onchan
   if(id==="ir-spectral-start")$("ir-spectral-scrub").value=$(id).value;
   requestWindow("ir-spectral");
 };
-window.addEventListener("pagehide",()=>{cancelWindowRequests();spectralWorker.dispose();player?.dispose();void ctx?.close();},{once:true});
+window.addEventListener("pagehide",()=>{cancelWindowRequests();spectralWorker.dispose();wave.dispose();player?.dispose();void ctx?.close();},{once:true});
 controls();

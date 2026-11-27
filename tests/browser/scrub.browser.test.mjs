@@ -41,7 +41,23 @@ test("real Wet Buffer/PV Worklets keep independent axes and non-DC freeze output
     await page.click("#prepare");await page.waitForFunction(()=>document.querySelector("#status").dataset.prepared==="true"&&!document.querySelector("#play").disabled);
     await choose("wet-buffer");await page.select("#solo","wet");await enabled();
     await field("source-seek",24000);await field("wet-seek",30000);await field("wet-speed",0);
-    await page.click("#play");await enabled();
+    await page.evaluate(()=>{
+      window.__playClicks=[];
+      document.addEventListener("click",e=>window.__playClicks.push({id:e.target.id,tag:e.target.tagName,x:e.clientX,y:e.clientY}),true);
+    });
+    const layout=await page.evaluate(()=>{
+      const width=document.documentElement.clientWidth;
+      return {width,scroll:document.documentElement.scrollWidth,viewport:innerWidth,overflow:[...document.querySelectorAll("body,body *")].filter(e=>e.getBoundingClientRect().right>width+.5||e.scrollWidth>e.clientWidth+1).map(e=>({tag:e.tagName,id:e.id,cls:e.className,x:e.getBoundingClientRect().x,w:e.getBoundingClientRect().width,right:e.getBoundingClientRect().right,scroll:e.scrollWidth,client:e.clientWidth,overflow:getComputedStyle(e).overflowX})).slice(0,35)};
+    });
+    assert.ok(layout.scroll<=layout.width+1,JSON.stringify(layout));
+    await page.click("#play");
+    await new Promise(r=>setTimeout(r,300));
+    console.log("P1 playback click diagnostic",JSON.stringify(await page.evaluate(()=>{
+      const el=document.querySelector("#play"),r=el.getBoundingClientRect();
+      const hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);
+      return {clicks:window.__playClicks,status:document.querySelector("#status").textContent,frames:document.querySelector("#status").dataset.renderedFrames,disabled:el.disabled,
+        hit:hit?.id,rect:{x:r.x,y:r.y,w:r.width,h:r.height},scrollY,viewport:[innerWidth,innerHeight]};
+    })),errors);await enabled();
     await page.waitForFunction(()=>Number(document.querySelector("#source-seek").value)>26000);
     assert.equal(await pos("wet"),30000);await audible();
     await page.select("#wet-calibration","compensated");await enabled();
@@ -141,6 +157,31 @@ test("real Wet Buffer/PV Worklets keep independent axes and non-DC freeze output
     await page.$eval("#wet-repeat",el=>{el.checked=false;el.dispatchEvent(new Event("change"));});await enabled();
     assert.match(await page.$eval("#wet-range-applied",el=>el.textContent),/^反復範囲:/);
     await page.click("#pause");await enabled();
+    // Drag a Source range handle through multiple pending updates.
+    await field("source-speed",1);
+    await field("source-range-start",offset+24000/48000);
+    await field("source-range-end",offset+36000/48000);
+    await page.select("#source-loop-style","pingpong");await enabled();
+    await page.$eval("#source-repeat",el=>{el.checked=true;el.dispatchEvent(new Event("change"));});await enabled();
+    await field("source-seek",30000);
+    await page.$eval("#wave-detail",el=>el.scrollIntoView({block:"center"}));
+    const geometry=await page.evaluate(()=>{
+      const c=document.querySelector("#wave-detail"),m=document.querySelector("#wave-a-marker");
+      const r=c.getBoundingClientRect(),a=m.getBoundingClientRect();
+      return {x:a.x+a.width/2,y:r.y+r.height*.6,w:r.width,span:Number(c.dataset.spanFrames),center:Number(c.getAttribute("aria-valuenow")),left:r.left};
+    });
+    const targetX=geometry.x-geometry.w*.10;
+    const desired=geometry.center+(targetX-geometry.left-geometry.w/2)*geometry.span/geometry.w;
+    const sourceOffset=Math.round(-offset*48000);
+    const wetHeld=await pos("wet");
+    await page.mouse.move(geometry.x,geometry.y);await page.mouse.down();
+    await page.mouse.move(targetX,geometry.y,{steps:8});await page.mouse.up();
+    await page.waitForFunction((target,tol)=>{
+      const field=document.querySelector("#source-range-start");
+      return Math.abs(Number(field.value)*48000-target)<tol&&!document.querySelector("#play").disabled;
+    },{},desired,geometry.span/geometry.w*2);
+    assert.equal(await pos("wet"),wetHeld);
+    assert.ok(sourceOffset>0);
     // Direct actual output measurement with a known 10:1 Wet decay fixture.
     const levels=await page.evaluate(async()=>{
       const {createScrubPair}=await import("/src/scrub-pair.mjs");

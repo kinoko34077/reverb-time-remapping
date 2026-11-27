@@ -1,1 +1,31 @@
 *{box-sizing:border-box}html{color-scheme:light dark}body{margin:0;font:15px system-ui,sans-serif;line-height:1.5;background:Canvas;color:CanvasText}main{width:100%;padding:12px;max-width:1100px;margin:auto}h1{font-size:1.25rem;margin:0}h2{font-size:1rem;margin:0 0 8px}header p{margin:4px 0 12px}section{border:1px solid GrayText;border-radius:7px;padding:10px;margin-bottom:10px}.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:8px;align-items:end}label{display:grid;gap:3px;min-width:0}input,select,button{font:inherit;color:inherit;min-width:0;max-width:100%;min-height:36px}input[type=file]{width:100%}button{cursor:pointer;padding:5px 10px}button[aria-pressed=true]{background:#1768a3;color:white;border:2px solid #1768a3}.modes{display:flex;gap:5px;flex-wrap:wrap;margin:8px 0}.modes button{flex:1}input[type=range]{width:100%}#status{min-height:3em;margin:5px 0;overflow-wrap:anywhere}.note{font-size:.85rem;color:GrayText;margin:0}[aria-invalid=true]{outline:2px solid #c44}output{font-variant-numeric:tabular-nums}a{color:LinkText}
+
+/* The ATF editor owns gestures, signal painting and the ruler. These scoped
+   layout rules adapt its existing wave-detail structure to RTR's panel,
+   rather than loading ATF's app-specific global stylesheet. */
+.audition{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;min-width:0}.audition>*{min-width:0}.source-wave{display:grid;grid-template-columns:minmax(0,1fr);gap:5px;min-width:0}.transport-row .modes{margin:0}.transport-row button{flex:1 1 0;min-width:0}
+.wave-editor-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+#source-wave-position{margin-inline-start:auto}.wave-zoom-actions{display:flex;align-items:center;gap:5px;user-select:none;-webkit-user-select:none}
+.wave-zoom-actions button{min-width:36px;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.wave-zoom-actions output{min-width:5ch;text-align:center;font:12px ui-monospace,monospace}
+.wave-detail-wrap{position:relative;overflow:hidden;min-width:0;border:1px solid #3a6064;border-radius:8px;background:#0a1e27;height:clamp(140px,25vh,225px);touch-action:none}
+.wave-detail-wrap canvas{display:block;width:100%;height:100%;touch-action:none;cursor:grab;outline-offset:-3px}
+.wave-detail-wrap canvas:active{cursor:grabbing}
+.wave-detail-ruler{position:absolute;inset:0;pointer-events:none;color:#b8dfdb;font:11px ui-monospace,monospace}
+.wave-detail-ruler>[data-ruler-tick]{position:absolute;top:3px;white-space:nowrap}
+.wave-center-head{position:absolute;z-index:4;pointer-events:none;top:0;bottom:0;left:50%;width:2px;transform:translateX(-50%);background:#ffac72}
+.wave-marker{position:absolute;pointer-events:none;top:28px;transform:translateX(-50%);padding:2px 6px;font-size:12px;font-weight:bold;color:#11232a;background:#6be2c4;border-radius:3px}.wave-marker-b{background:#ffd38a}
+.source-wave[data-loop-available=false] .wave-marker{display:none!important}
+@media(max-width:560px){main{padding:8px}.audition .fields{grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr))}.wave-detail-wrap{height:clamp(124px,23vh,210px)}}
+
+/* Prevent intrinsic canvas backing-store and form values from widening a
+   mobile CSS viewport. No overflow clipping of controls. */
+main,section,.fields,.wave-editor-toolbar{min-width:0}
+.audition .note{overflow-wrap:anywhere}
+
+/* Constrain intrinsic label tracks; long status/filename text must wrap,
+   not enlarge the mobile layout viewport. Native ranges use their full
+   available track, without the UA's extra horizontal margins. */
+body{overflow-wrap:anywhere;-webkit-text-size-adjust:100%;text-size-adjust:100%}
+label{grid-template-columns:minmax(0,1fr)}
+input[type=range]{margin-inline:0;min-inline-size:0}

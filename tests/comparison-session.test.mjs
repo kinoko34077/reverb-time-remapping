@@ -62,3 +62,24 @@ test("IR window keeps natural attenuation, stereo and signed placement",async()=
   assert.throws(()=>extractIRWindow(ir,{start:4/sr,duration:1/sr}),/範囲外/);
   assert.throws(()=>extractIRWindow(ir,{start:-1/sr,duration:1/sr}),/不正/);
 });
+
+test("IR window refresh reuses base signals and applies common RMS correction explicitly",async()=>{
+  const x={sampleRate:sr,origin:0,channels:[Float32Array.of(1)]};
+  const ir={sampleRate:sr,origin:0,channels:[Float32Array.of(1,1,.1,.1),Float32Array.of(-1,-1,-.1,-.1)]};
+  const c=await prepareComparison(x,ir,{renderMono:mono,irWindow:{start:0,duration:2/sr}});
+  const late=await c.withIRWindow({start:2/sr,duration:2/sr});
+  for(const mode of ["dry","normal","reverse"])assert.equal(late.signals[mode],c.signals[mode]);
+  assert.equal(late.irScale,1);
+  const corrected=await late.withIRWindow({start:2/sr,duration:2/sr,calibration:"compensated"});
+  assert.ok(Math.abs(corrected.irScale-Math.sqrt(.505)/.1)<1e-6);
+  const l=corrected.signals["ir-window"].channels[0],r=corrected.signals["ir-window"].channels[1];
+  assert.ok(l.every((v,i)=>v===-r[i]));
+  const at=-corrected.interval.start;
+  assert.ok(Math.abs(l[at]-Math.sqrt(.505))<1e-6);
+  assert.ok(Math.abs(late.signals["ir-window"].channels[0][at]-.1)<1e-7);
+  await assert.rejects(c.withIRWindow({start:9/sr,duration:1/sr}),/範囲外/);
+  const weak={sampleRate:sr,channels:[Float32Array.of(1,1e-7,0)]};
+  assert.equal(extractIRWindow(weak,{start:1/sr,duration:1/sr,calibration:"compensated"}).scale,8);
+  const silent=extractIRWindow(weak,{start:2/sr,duration:1/sr,calibration:"compensated"});
+  assert.equal(silent.scale,1);assert.equal(silent.channels[0][0],0);
+});

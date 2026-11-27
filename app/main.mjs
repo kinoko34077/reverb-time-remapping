@@ -7,7 +7,7 @@ const $=id=>document.getElementById(id);
 let ctx,player,session,mode="dry",appliedMode="dry",busy=false,seeking=false,sourceFile=null,irFile=null;
 const status=$("status"),seek=$("seek");
 let savedAxes={};const dragging=new Set();
-let windowRevision=0,windowWork=null,queuedWindow=null;
+let windowRevision=0,windowWork=null,queuedWindow=null,windowApplying=false;
 function cancelWindowRequests(){++windowRevision;queuedWindow=null;}
 function readNumber(id){
   const raw=$(id).value;
@@ -17,14 +17,14 @@ function readNumber(id){
 function readWindow(){
   return {start:readNumber("ir-window-start")/1000,duration:readNumber("ir-window-length")/1000,calibration:$("ir-calibration").value};
 }
-function showWindow(next){
+function showWindow(next,{latest=true}={}){
   $("gain").textContent="共通出力ゲイン "+next.gain.applied.toFixed(4)+"（安全減衰を含む）";
   const range=next.irWindow;
   $("window-range").textContent="適用IR窓: "+(range.startFrame/next.sampleRate*1000).toFixed(3)+" – "+(range.endFrame/next.sampleRate*1000).toFixed(3)+" ms"+(range.truncated?"（IR終端まで）":"")+
     (next.irCalibration==="compensated"?" / RMS補正 ×"+next.irScale.toFixed(3):" / 自然減衰");
   $("ir-window-scrub").max=String((next.irFrames-1)/next.sampleRate*1000);
   $("ir-window-scrub").value=$("ir-window-start").value;
-  $("window-request").textContent=$("ir-window-start").value+" ms";
+  if(latest)$("window-request").textContent=$("ir-window-start").value+" ms";
 }
 function requestWindow(){
   if(!session||mode!=="ir-window")return;
@@ -34,7 +34,7 @@ function requestWindow(){
     $("window-request").textContent=(settings.start*1000).toFixed(3)+" ms（要求）";
     message("IR窓を計算中…（旧音を維持）");
     pumpWindow();
-  }catch(error){message("IR窓を更新できません: "+error.message);}
+  }catch(error){cancelWindowRequests();message("IR窓を更新できません: "+error.message);}
 }
 function pumpWindow(){
   if(busy||windowWork||!queuedWindow)return;
@@ -44,13 +44,16 @@ function pumpWindow(){
       const next=await job.base.withIRWindow(job.settings);
       if(job.revision!==windowRevision||mode!=="ir-window")return;
       if(busy){if(!queuedWindow)queuedWindow=job;return;}
-      await run(async()=>{
-        if(job.revision!==windowRevision||mode!=="ir-window")return;
-        const accepted=await player.load(next.select(mode,binding.value,$("solo").value),next.gain.applied,{crossfade:true});
-        if(!accepted)return;
-        session=next;showWindow(next);show(player.state.position);
-        if(job.revision===windowRevision)message("IR窓を適用: "+next.irCalibration);
-      });
+      windowApplying=true;
+      try{
+        await run(async()=>{
+          if(job.revision!==windowRevision||mode!=="ir-window")return;
+          const accepted=await player.load(next.select(mode,binding.value,$("solo").value),next.gain.applied,{crossfade:true});
+          if(!accepted)return;
+          session=next;showWindow(next,{latest:job.revision===windowRevision});show(player.state.position);
+          if(job.revision===windowRevision)message("IR窓を適用: "+next.irCalibration);
+        });
+      }finally{windowApplying=false;controls();}
     }catch(error){if(job.revision===windowRevision)message("IR窓を更新できません: "+error.message);}
   })().finally(()=>{windowWork=null;pumpWindow();});
 }
@@ -71,7 +74,8 @@ function controls(){
   for(const b of document.querySelectorAll("[data-mode]")){b.disabled=busy||!session;b.setAttribute("aria-pressed",String(b.dataset.mode===appliedMode));}
   for(const id of ["play","pause","stop","seek","apply-mix"])$(id).disabled=busy||!session;
   $("ir-live").hidden=appliedMode!=="ir-window";
-  $("ir-window-scrub").disabled=busy||!session||appliedMode!=="ir-window";
+  $("ir-window-scrub").disabled=(busy&&!windowApplying)||!session||appliedMode!=="ir-window";
+  if(windowApplying)for(const id of ["ir-window-start","ir-window-length","ir-calibration"])$(id).disabled=false;
   $("scrub-axes").hidden=!isScrubMode(appliedMode);
   for(const name of ["source","wet"])for(const suffix of ["seek","speed","repeat"])
     $(name+"-"+suffix).disabled=busy||!session||!isScrubMode(appliedMode);

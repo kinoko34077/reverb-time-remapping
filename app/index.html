@@ -4,10 +4,10 @@
 <body><main>
 <header><h1>Reverb Time Remapping</h1><p>正規版・比較試聴（R4b・IR再合成） <a href="../prototype/">Muse実験版</a></p></header>
 <section aria-label="素材"><h2>音源 / IR</h2><div class="fields">
-<label>原音<select id="source"><option value="impulse">Impulse</option><option value="sine">Sine</option><option value="square">Square</option><option value="saw">Saw</option><option value="noise">Noise</option><option value="chord">Chord</option><option value="piano-like">Piano風（合成）</option><option value="drums-like">Drums風（合成）</option><option value="file" disabled>読込WAV</option></select></label>
-<label>原音WAV<input id="source-file" type="file" accept=".wav,audio/wav"></label>
-<label>IR<select id="ir"><option value="dense">高密度</option><option value="delay">Delay</option><option value="sparse">初期反射</option><option value="band-decay">帯域別減衰</option><option value="file" disabled>読込WAV</option></select></label>
-<label>IR WAV<input id="ir-file" type="file" accept=".wav,audio/wav"></label>
+<label>原音<select id="source"><option value="impulse">Impulse</option><option value="sine">Sine</option><option value="square">Square</option><option value="saw">Saw</option><option value="noise">Noise</option><option value="chord">Chord</option><option value="piano-like">Piano風（合成）</option><option value="drums-like">Drums風（合成）</option><option value="file" disabled>読込音声</option></select></label>
+<label>原音ファイル<input id="source-file" type="file" accept="audio/*,.wav,.mp3"></label>
+<label>IR<select id="ir"><option value="dense">高密度</option><option value="delay">Delay</option><option value="sparse">初期反射</option><option value="band-decay">帯域別減衰</option><option value="file" disabled>読込音声</option></select></label>
+<label>IRファイル<input id="ir-file" type="file" accept="audio/*,.wav,.mp3"></label>
 <label>発振周波数 (Hz)<input id="frequency" type="number" min="20" max="20000" step="any" value="440"></label>
 <label>IR長 (s)<input id="ir-length" type="number" min=".01" max="12" step="any" value="1.5"></label>
 <label>Predelay (ms・正負)<input id="predelay" type="number" step="any" value="0"></label>

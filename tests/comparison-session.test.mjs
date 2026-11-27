@@ -39,7 +39,7 @@ test("local WAV reads original PCM with budget and invalid-file rejection",async
   const x=await readLocalWav(wav());
   assert.deepEqual(Array.from(x.channels[0]),[.5,-.5]);
   assert.equal(x.originalSampleRate,sr);
-  await assert.rejects(readLocalWav(wav(),{maxBytes:4}),/予算/);
+  await assert.rejects(readLocalWav(wav(),{maxBytes:4}),/budget/);
   await assert.rejects(readLocalWav(new Blob(["bad"])));
 });
 

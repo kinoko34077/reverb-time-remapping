@@ -175,13 +175,27 @@ test("committed Wet edits apply during playback without recomputing convolution"
     const renders=await page.evaluate(()=>window.__renderCount);
     await page.click("#play");
     await page.waitForFunction(()=>Number(document.querySelector("#status").dataset.renderedFrames)>0);
+    const statusBeforeUnchangedBlur=await page.$eval("#status",element=>element.textContent);
+    await page.focus("#wet");await page.keyboard.press("Tab");
+    await new Promise(resolve=>setTimeout(resolve,300));
+    assert.equal(await page.$eval("#status",element=>element.textContent),statusBeforeUnchangedBlur,
+      "leaving the unchanged Wet field must not reload the comparison");
     const before=await outputRMS(page);
 
     await page.focus("#wet");
     await page.keyboard.down("Control");
     await page.keyboard.press("A");
     await page.keyboard.up("Control");
-    await page.keyboard.type("100");
+    for(const [typed,digit] of [["1","1"],["10","0"],["100","0"]]){
+      await page.keyboard.type(digit);
+      await new Promise(resolve=>setTimeout(resolve,180));
+      assert.equal(await page.$eval("#wet",field=>field.value),typed,
+        "a completed digit should remain in the active Wet field until blur");
+      assert.equal(await page.$eval("#wet",field=>field.disabled),false,
+        "Wet editing should not disable its own field before blur");
+      assert.equal(await page.evaluate(()=>document.activeElement?.id),"wet",
+        "typing should keep focus in the Wet field until blur");
+    }
     await page.keyboard.press("Tab");
     await page.waitForFunction(()=>document.querySelector("#status").textContent.includes("適用: normal / Wet 100.000%"),{timeout:10000});
     await page.waitForFunction(()=>{

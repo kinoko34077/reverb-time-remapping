@@ -4,7 +4,7 @@ import {spawn} from "node:child_process";
 import puppeteer from "puppeteer-core";
 import {cleanupTestProcesses} from "../../shared/atf/test-process-cleanup.mjs";
 test("regular entry prepares audio, switches comparison, seeks and retains last good WAV",async()=>{
-  const port=18767,server=spawn("python3",["-m","http.server",String(port),"--bind","127.0.0.1"],{stdio:"ignore"});
+  const port=18767,server=spawn(process.env.PYTHON_BIN||"python3",["-m","http.server",String(port),"--bind","127.0.0.1"],{stdio:"ignore"});
   let browser;
   try{
     browser=await puppeteer.launch({executablePath:process.env.CHROME_BIN||"/usr/bin/google-chrome",headless:true,args:["--no-sandbox","--disable-dev-shm-usage","--mute-audio","--autoplay-policy=no-user-gesture-required"]});
@@ -102,13 +102,12 @@ test("regular entry prepares audio, switches comparison, seeks and retains last 
     await page.waitForFunction(()=>document.querySelector('[data-mode="reverse"]').getAttribute("aria-pressed")==="true"&&!document.querySelector("#seek").disabled);
     assert.equal(await page.$eval("#seek",el=>Number(el.value)),before);
     await page.focus("#wet");await page.$eval("#wet",el=>{el.value="75.125";el.dispatchEvent(new Event("input"));});
-    await page.click("#apply-mix");
     await page.waitForFunction(()=>document.querySelector("#status").textContent.includes("75.125%")&&!document.querySelector("#seek").disabled);
     await page.evaluate(()=>{
       const d=new DataTransfer();d.items.add(new File(["bad"],"bad.wav",{type:"audio/wav"}));
       const input=document.querySelector("#source-file");input.files=d.files;input.dispatchEvent(new Event("change"));
     });
-    await page.waitForFunction(()=>document.querySelector("#status").textContent.includes("処理できません")&&!document.querySelector("#play").disabled);
+    await page.waitForFunction(()=>document.querySelector("#status").textContent.includes("読み込めません")&&!document.querySelector("#play").disabled);
     assert.equal(await page.$eval("#source",el=>el.value),"sine");
     assert.equal(await page.$eval('[data-mode="reverse"]',el=>el.getAttribute("aria-pressed")),"true");
     // Actual local input, different source rate; the app must not silently
@@ -150,7 +149,7 @@ test("regular entry prepares audio, switches comparison, seeks and retains last 
     assert.ok(Math.abs(native.right[0]+.1)<1e-6&&Math.abs(native.right[1]+.05)<1e-6);
     await page.$eval("#ir-window-start",el=>el.value="2000");
     await page.click("#prepare");
-    await page.waitForFunction(()=>document.querySelector("#status").textContent.includes("処理できません")&&!document.querySelector("#play").disabled);
+    await page.waitForFunction(()=>document.querySelector("#status").textContent.includes("比較音を更新できません")&&!document.querySelector("#play").disabled);
     assert.ok((await page.$eval("#window-range",el=>el.textContent)).includes("500.000 – 650.000"));
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
     await page.setViewport({width:1280,height:800});

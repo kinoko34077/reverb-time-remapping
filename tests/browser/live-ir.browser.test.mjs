@@ -5,7 +5,7 @@ import puppeteer from "puppeteer-core";
 import {cleanupTestProcesses} from "../../shared/atf/test-process-cleanup.mjs";
 
 test("IR window changes keep old output while rendering and apply only the latest window",async()=>{
-  const port=18769,server=spawn("python3",["-m","http.server",String(port),"--bind","127.0.0.1"],{stdio:"ignore"});
+  const port=18769,server=spawn(process.env.PYTHON_BIN||"python3",["-m","http.server",String(port),"--bind","127.0.0.1"],{stdio:"ignore"});
   let browser;
   try{
     browser=await puppeteer.launch({executablePath:process.env.CHROME_BIN||"/usr/bin/google-chrome",headless:true,args:["--no-sandbox","--disable-dev-shm-usage","--mute-audio","--autoplay-policy=no-user-gesture-required"]});

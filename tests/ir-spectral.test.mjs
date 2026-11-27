@@ -68,3 +68,62 @@ test("reconstructed IR is the actual convolution kernel with signed placement",a
   assert.deepEqual(result.wet.channels,result.kernel.channels);
   assert.equal(result.wet.channels[0].length,4096);
 });
+
+// Acoustic proxies for this finite IR approximation, not physical path recovery.
+// Measurements are separate from the production STFT to avoid testing it with itself.
+test("IR spectral multiband, window-size and loop periodicity measurements",()=>{
+  const n=48000,center=24000;
+  const low=375,high=1500;
+  const signal=Float32Array.from({length:n},(_,i)=>.3*Math.sin(2*Math.PI*low*i/sr)+.12*Math.sin(2*Math.PI*high*i/sr));
+  const ir={sampleRate:sr,channels:[signal,signal.map(v=>-v)]};
+  const reference=signal.subarray(center,center+4096),ratio=energy(reference,high)/energy(reference,low);
+  const measurements=[];
+  for(const fftFrames of [1024,2048,4096]){
+    for(const speed of [0,-.5,2]){
+      const k=renderIRSpectral(ir,{startFrame:center,speed,outputFrames:8192,fftFrames,hopFrames:fftFrames/8});
+      const l=k.channels[0].subarray(4096),r=k.channels[1].subarray(4096);
+      const bandRatio=energy(l,high)/energy(l,low);
+      const relativePhaseError=Math.max(...l.map((v,i)=>Math.abs(v+r[i])));
+      measurements.push({fftFrames,speed,rms:rms(l),bandRatio,referenceRatio:ratio,relativePhaseError});
+      assert.ok(rms(l)>.05);
+      assert.ok(Math.abs(bandRatio-ratio)<.12,{fftFrames,speed,bandRatio,ratio});
+      assert.ok(relativePhaseError<1e-5);
+    }
+  }
+  // A non-bin-centered tone distinguishes local PCM repetition from phase
+  // propagation. Periodicity proxy is the normalized difference at one window lag.
+  const h=tone(),k=renderIRSpectral(h,{startFrame:center,speed:0,outputFrames:8192});
+  const grain=h.channels[0].slice(center-1024,center+1024);
+  const raw=Float32Array.from({length:4096},(_,i)=>grain[i%grain.length]);
+  const pv=k.channels[0].subarray(4096);
+  const lagError=x=>rms(Float32Array.from(x.subarray(0,2048),(v,i)=>v-x[i+2048]))/rms(x);
+  const rawError=lagError(raw),pvError=lagError(pv);
+  assert.equal(rawError,0);assert.ok(pvError>.05,{pvError});
+  console.log("R4 acoustic band/phase and lag proxies",JSON.stringify({measurements,rawError,pvError}));
+});
+test("IR spectral sparse-reflection smearing is measured rather than treated as path recovery",()=>{
+  const n=16384,l=new Float32Array(n);
+  l[4096]=1;l[8192]=.3;l[12288]=.1;
+  const h={sampleRate:sr,channels:[l,l.map(v=>-v)]};
+  const stats=x=>{
+    const powers=Array.from(x,v=>v*v),total=powers.reduce((s,v)=>s+v,0);
+    let sum=0,a=null,b=null,active=0,peak=0;
+    for(let i=0;i<x.length;i++){
+      sum+=powers[i];if(a===null&&sum>=.05*total)a=i;if(b===null&&sum>=.95*total)b=i;
+      peak=Math.max(peak,Math.abs(x[i]));
+    }
+    for(let i=0;i<x.length;i+=128)if(rms(x.subarray(i,i+128))>peak*.005)active++;
+    return {rms:rms(x),peak,energyWidthFrames:total?b-a:0,activeBlocks:active};
+  };
+  const exact=renderIRSpectral(h),original=stats(l);
+  assert.deepEqual(exact.channels[0],l);assert.equal(original.activeBlocks,3);
+  const measurements=[];
+  for(const fftFrames of [1024,2048,4096]){
+    const k=renderIRSpectral(h,{startFrame:4096,speed:0,outputFrames:8192,fftFrames,hopFrames:fftFrames/8});
+    const left=k.channels[0],right=k.channels[1],m=stats(left);
+    assert.ok(left.every(Number.isFinite));assert.ok(left.every((v,i)=>Math.abs(v+right[i])<1e-5));
+    assert.ok(m.rms>0&&m.peak>0&&m.activeBlocks>1);
+    measurements.push({fftFrames,...m});
+  }
+  console.log("R4 sparse reflection energy-spread proxies",JSON.stringify({original,measurements}));
+});

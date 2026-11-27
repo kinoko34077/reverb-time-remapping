@@ -53,6 +53,10 @@
     "playback-feedback.test.mjs": {
       "source": "web-demo/playback-feedback.test.mjs",
       "gitBlob": "abcf1a002b47e20e5428eb09fc5118e7e98dd74a"
+    },
+    "dsp.mjs": {
+      "source": "web-demo/dsp.mjs",
+      "gitBlob": "15b106bd3afb562c8e6d44e9aa3792a45ae9c076"
     }
   }
 }

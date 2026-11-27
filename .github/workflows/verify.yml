@@ -38,3 +38,7 @@ jobs:
         run: git diff --check "$HEAD_SHA^" "$HEAD_SHA"
       - name: Verify pinned audio and UI supply and representative adapters
         run: node --test shared/atf/*.test.mjs shared/fw/*.test.mjs tests/*.test.mjs
+      - name: Install existing Audio Lab browser-test dependency
+        run: npm install --no-save --no-package-lock puppeteer-core@24
+      - name: Verify actual browser convolution against numeric reference
+        run: node --test tests/browser/convolution.browser.test.mjs

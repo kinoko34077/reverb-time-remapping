@@ -8,7 +8,8 @@ export function scrubGains(wet,solo){
 }
 // Buffer freeze is a local raw loop, not a zero-speed PCM sample. The anchor
 // stays fixed while the carrier loops. PV freeze uses the upstream speed=0.
-export function axisPlan({frame,speed,repeat=false,rangeStartFrame=0,rangeEndFrame=length},length,sampleRate,processingMode){
+export function axisPlan({frame,speed,repeat=false,rangeStartFrame=0,rangeEndFrame},length,sampleRate,processingMode){
+  rangeEndFrame??=length;
   validatePlaybackSpeed(speed);
   if(!Number.isSafeInteger(frame)||frame<0||frame>length||!Number.isSafeInteger(length)||length<1)
     throw RangeError("参照位置が範囲外です");

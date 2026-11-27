@@ -56,20 +56,34 @@ test("IR and Wet read caches have separate ownership and bounded residency",asyn
   }finally{ir.dispose();wet.dispose();}
 });
 
-test("FW canonical wet binding and typed field retain exact valid value",()=>{
+test("FW canonical wet binding preserves typing, precision and invalid draft",()=>{
   class Field extends EventTarget{
-    constructor(){super();this.value="";this.dataset={};}
-    select(){} blur(){this.dispatchEvent(new Event("blur"));}
+    constructor(){super();this.value="";this.attrs=new Map();this.ownerDocument={activeElement:null};}
+    setAttribute(k,v){this.attrs.set(k,String(v));}
+    getAttribute(k){return this.attrs.get(k);}
+    select(){}
+    focus(){this.ownerDocument.activeElement=this;this.dispatchEvent(new Event("focus"));}
+    blur(){this.ownerDocument.activeElement=null;this.dispatchEvent(new Event("blur"));}
+    send(type){this.dispatchEvent(new Event(type));}
   }
-  const field=new Field(),binding=createWetMixBinding(),updates=[];
+  const field=new Field(),binding=createWetMixBinding({initialValue:.331256789}),updates=[];
   const mounted=mountWetMixField({field,binding,onChanged:value=>updates.push(value)});
-  assert.equal(field.value,"50");
-  field.value="33.125";field.dispatchEvent(new Event("input"));
-  assert.ok(Math.abs(binding.value-.33125)<1e-12);
-  field.dispatchEvent(new Event("change"));assert.equal(updates.length,1);
-  field.value="";field.dispatchEvent(new Event("input"));
-  assert.equal(field.dataset.invalid,"true");
-  assert.ok(Math.abs(binding.value-.33125)<1e-12);
+  assert.equal(field.value,"33.126");
+  field.focus();field.blur();
+  assert.equal(binding.value,.331256789);
+  assert.equal(updates.length,0);
+  field.focus();
+  field.value="33.";field.send("input");
+  assert.equal(field.value,"33.","a decimal point must survive typing");
+  field.value="33.1256789";field.send("input");
+  assert.equal(field.value,"33.1256789");
+  assert.ok(Math.abs(binding.value-.331256789)<1e-12);
+  const count=updates.length;
+  field.send("change");assert.equal(updates.length,count);
+  field.value="";field.send("input");
+  assert.equal(field.getAttribute("aria-invalid"),"true");
+  assert.ok(Math.abs(binding.value-.331256789)<1e-12);
+  field.blur();assert.equal(field.value,"33.126");
   mounted.dispose();
-  field.value="80";field.dispatchEvent(new Event("input"));assert.equal(updates.length,1);
+  field.value="80";field.send("input");assert.equal(updates.length,count);
 });

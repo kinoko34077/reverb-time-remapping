@@ -20,6 +20,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 2
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 26.x
+      - name: Confirm Node 26 toolchain
+        run: node --version
       - name: Fetch pull request base commit
         if: github.event_name == 'pull_request'
         env:

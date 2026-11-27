@@ -227,8 +227,9 @@ function flushWetApply(){
   wetApplyRequested=false;
   void run(()=>choose(mode));
 }
+function applyPendingWetEdit(){if(wetApplyRequested)scheduleWetApply();}
 mountWetMixField({field:$("wet"),binding,onChanged:scheduleWetApply});
-$("wet").addEventListener("blur",scheduleWetApply);
+$("wet").addEventListener("blur",applyPendingWetEdit);
 async function loadMode(target,next,options={}){
   if(isScrubMode(next)){
     const positions=options.reset?{}:{...savedAxes,

@@ -175,6 +175,11 @@ test("committed Wet edits apply during playback without recomputing convolution"
     const renders=await page.evaluate(()=>window.__renderCount);
     await page.click("#play");
     await page.waitForFunction(()=>Number(document.querySelector("#status").dataset.renderedFrames)>0);
+    const statusBeforeUnchangedBlur=await page.$eval("#status",element=>element.textContent);
+    await page.focus("#wet");await page.keyboard.press("Tab");
+    await new Promise(resolve=>setTimeout(resolve,300));
+    assert.equal(await page.$eval("#status",element=>element.textContent),statusBeforeUnchangedBlur,
+      "leaving the unchanged Wet field must not reload the comparison");
     const before=await outputRMS(page);
 
     await page.focus("#wet");

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {readLocalAudio} from "../../src/materials.mjs";
+import {readLocalAudio} from "../src/materials.mjs";
 
 test("native decoder preserves channel data and rejects invalid/oversize material",async()=>{
   const file=new Blob([new Uint8Array([255,251,16,0])],{type:"audio/mpeg"});

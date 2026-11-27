@@ -84,7 +84,9 @@ export function createPreviewPlayer(ctx,{onState=()=>{}}={}){
         if(stale()){
           try{await active.pause();}catch{}
           if(current===active)running=false;
-          return false;
+          // Stop may invalidate playback after this bridge was installed.
+          // Keep the caller's mode state aligned with the bridge that remains current.
+          return !disposed&&current===active;
         }
         running=true;
       }

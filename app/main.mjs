@@ -77,17 +77,28 @@ function readSpectral(){
 }
 function showSpectral(next,{reset=false,latest=true}={}){
   const s=next.irSpectral,ms=frame=>frame*1000/next.sampleRate;
+  const requested=queuedWindow?.mode==="ir-spectral"?{
+    start:$("ir-spectral-start").value,speed:$("ir-spectral-speed").value,
+    length:$("ir-spectral-length").value,boundary:$("ir-spectral-boundary").value,
+    rangeStart:$("ir-spectral-range-start").value,rangeEnd:$("ir-spectral-range-end").value,
+    fft:$("ir-spectral-fft").value,calibration:$("ir-spectral-calibration").value
+  }:null;
   if(reset){
     for(const id of ["ir-spectral-start","ir-spectral-scrub"])$(id).max=String(ms(next.irFrames-1));
     $("ir-spectral-range-end").max=String(ms(next.irFrames));
     $("ir-spectral-range-start").max=String(ms(next.irFrames-1));
-    $("ir-spectral-start").value=String(ms(s.startFrame));$("ir-spectral-scrub").value=String(ms(s.startFrame));
-    $("ir-spectral-speed").value=String(s.speed);$("ir-spectral-length").value=String(ms(s.outputFrames));
-    $("ir-spectral-boundary").value=s.boundary;$("ir-spectral-range-start").value=String(ms(s.loopStartFrame));
-    $("ir-spectral-range-end").value=String(ms(s.loopEndFrame));$("ir-spectral-fft").value=String(s.fftFrames);
-    $("ir-spectral-calibration").value=next.irSpectralCalibration;
+    $("ir-spectral-start").value=requested?.start??String(ms(s.startFrame));
+    $("ir-spectral-scrub").value=$("ir-spectral-start").value;
+    $("ir-spectral-speed").value=requested?.speed??String(s.speed);
+    $("ir-spectral-length").value=requested?.length??String(ms(s.outputFrames));
+    $("ir-spectral-boundary").value=requested?.boundary??s.boundary;
+    $("ir-spectral-range-start").value=requested?.rangeStart??String(ms(s.loopStartFrame));
+    $("ir-spectral-range-end").value=requested?.rangeEnd??String(ms(s.loopEndFrame));
+    $("ir-spectral-fft").value=requested?.fft??String(s.fftFrames);
+    $("ir-spectral-calibration").value=requested?.calibration??next.irSpectralCalibration;
   }
-  if(latest)$("ir-spectral-request").textContent="適用済み";
+  if(latest)$("ir-spectral-request").textContent=requested?
+    "計算要求: "+requested.start+" ms / "+requested.speed+"×":"適用済み";
   $("ir-spectral-applied").textContent="適用IR: "+ms(s.startFrame).toFixed(3)+" ms / "+s.speed+"× / "+
     ms(s.outputFrames).toFixed(3)+" ms / "+s.boundary+" / "+s.algorithm+
     (next.irSpectralCalibration==="compensated"?" / RMS補正 ×"+next.irSpectralScale.toFixed(3):" / 自然減衰");
@@ -288,6 +299,7 @@ async function applyPreparation(job,next){
     if(stopRevision!==stopToken)await player.stop();
     wetApplyRequested=false;clearTimeout(wetApplyTimer);wetApplyTimer=null;
     session=next;appliedSourceKey=job.sourceKey;savedAxes={};pendingWave=null;
+    if(queuedWindow?.mode==="ir-spectral")queuedWindow={...queuedWindow,settings:readSpectral()};
     syncComparisonRange(next,{reset:true});show(player.state.position);
     if(sourceChanged)wave.setSource(job.source,next);else wave.setInterval(next);
     for(const name of ["source","wet"]){

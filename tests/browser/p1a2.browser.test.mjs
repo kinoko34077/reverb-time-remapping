@@ -35,6 +35,8 @@ async function openApp(){
       window.__renderCount=0;
       window.__renderGate={holding:false,releases:[]};
       window.__spectralGate={holding:false,held:[]};
+      window.__workerMessages=[];
+      window.__playGate={holding:false,held:[]};
       if(globalThis.OfflineAudioContext){
         const prototype=OfflineAudioContext.prototype,original=prototype.startRendering;
         prototype.startRendering=function(...args){
@@ -46,6 +48,10 @@ async function openApp(){
       }
       const NativeWorker=window.Worker;
       window.Worker=class extends NativeWorker{
+        postMessage(message,...rest){
+          window.__workerMessages.push({speed:message.settings?.speed,start:message.settings?.startFrame});
+          super.postMessage(message,...rest);
+        }
         set onmessage(handler){
           super.onmessage=event=>{
             if(window.__spectralGate.holding)window.__spectralGate.held.push(()=>handler(event));
@@ -54,6 +60,22 @@ async function openApp(){
         }
         get onmessage(){return super.onmessage;}
       };
+      const messageHandler=Object.getOwnPropertyDescriptor(MessagePort.prototype,"onmessage");
+      Object.defineProperty(MessagePort.prototype,"onmessage",{
+        configurable:true,
+        get(){return messageHandler.get.call(this);},
+        set(handler){
+          if(typeof handler!=="function"){messageHandler.set.call(this,handler);return;}
+          const port=this;
+          messageHandler.set.call(port,event=>{
+            const message=event.data||{};
+            if(window.__playGate.holding&&message.type==="command-accepted"&&message.op==="play"){
+              window.__playGate.held.push(()=>handler.call(port,event));return;
+            }
+            handler.call(port,event);
+          });
+        }
+      });
       const original=AudioContext.prototype.createWaveShaper;
       AudioContext.prototype.createWaveShaper=function(...args){
         const node=original.apply(this,args),tap=this.createAnalyser();tap.fftSize=4096;
@@ -77,6 +99,7 @@ async function closeApp({browser,page,server}){
   try{await page.evaluate(()=>{
     window.__renderGate.holding=false;for(const release of window.__renderGate.releases.splice(0))release();
     window.__spectralGate.holding=false;for(const release of window.__spectralGate.held.splice(0))release();
+    window.__playGate.holding=false;for(const release of window.__playGate.held.splice(0))release();
   });}catch{}
   await cleanupTestProcesses(browser);
   server.closeAllConnections();
@@ -219,6 +242,8 @@ test("an IR spectral edit queued during preparation applies to the new source",a
       for(const release of window.__renderGate.releases.splice(0))release();
     });
     await page.waitForFunction(()=>document.querySelector("#status").textContent.startsWith("準備済み"),{timeout:30000});
+    assert.equal(await page.$eval("#ir-spectral-speed",field=>field.value),"2",
+      "the queued IR Spectral speed should remain visible while it is applied to the new session");
     await page.waitForFunction(()=>!document.querySelector("#play").disabled,{timeout:5000});
     await page.click("#play");
     await page.waitForFunction(()=>{
@@ -235,6 +260,11 @@ test("an IR spectral edit queued during preparation applies to the new source",a
     await new Promise(resolve=>setTimeout(resolve,150));
     const rms=await outputRMS(page);
     assert.ok(rms>.05,`a stale IR result must not restore the old impulse source (RMS=${rms})`);
+    await page.$eval("#ir-spectral-start",field=>{field.value="5";field.dispatchEvent(new Event("change",{bubbles:true}));});
+    await page.waitForFunction(()=>window.__workerMessages.some(message=>message.speed===2&&message.start===240),{timeout:10000});
+    await page.waitForFunction(()=>document.querySelector("#status").textContent.includes("IR再合成を適用"),{timeout:10000});
+    assert.equal(await page.$eval("#ir-spectral-speed",field=>field.value),"2",
+      "editing another IR Spectral parameter should keep the queued speed");
     assert.deepEqual(app.errors,[]);
   }finally{await closeApp(app);}
 });
@@ -286,6 +316,30 @@ test("a stale slow file decode cannot replace a newer generated source",async()=
     await new Promise(resolve=>setTimeout(resolve,150));
     assert.equal(await page.$eval("#source",field=>field.value),"sine");
     assert.ok(await page.$eval("#status",element=>element.textContent.startsWith("準備済み")));
+    assert.deepEqual(app.errors,[]);
+  }finally{await closeApp(app);}
+});
+
+test("Stop during a mode switch keeps the installed playback mode synchronized",async()=>{
+  const app=await openApp();
+  try{
+    const {page}=app;
+    await prepare(page);
+    await page.click("#play");
+    await page.waitForFunction(()=>Number(document.querySelector("#status").dataset.renderedFrames)>0);
+    await page.evaluate(()=>{window.__playGate.holding=true;});
+    await page.click('[data-mode="wet-buffer"]');
+    await page.waitForFunction(()=>window.__playGate.held.length>0,{timeout:10000});
+    await page.click("#stop");
+    await page.waitForFunction(()=>document.querySelector("#status").textContent==="先頭"&&
+      document.querySelector("#stop").disabled===false,{timeout:5000});
+    await page.evaluate(()=>{
+      window.__playGate.holding=false;
+      for(const release of window.__playGate.held.splice(0))release();
+    });
+    await page.waitForFunction(()=>!document.querySelector('[data-mode="wet-buffer"]').disabled,{timeout:5000});
+    assert.equal(await page.$eval('[data-mode="wet-buffer"]',button=>button.getAttribute("aria-pressed")),"true");
+    assert.equal(await page.$eval("#scrub-axes",element=>element.hidden),false);
     assert.deepEqual(app.errors,[]);
   }finally{await closeApp(app);}
 });

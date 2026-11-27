@@ -45,6 +45,8 @@ test("real Wet Buffer/PV Worklets keep independent axes and non-DC freeze output
       window.__playClicks=[];
       document.addEventListener("click",e=>window.__playClicks.push({id:e.target.id,tag:e.target.tagName,x:e.clientX,y:e.clientY}),true);
     });
+    const layout=await page.evaluate(()=>({width:document.documentElement.clientWidth,scroll:document.documentElement.scrollWidth,viewport:innerWidth}));
+    assert.ok(layout.scroll<=layout.width+1,JSON.stringify(layout));
     await page.click("#play");
     await new Promise(r=>setTimeout(r,300));
     console.log("P1 playback click diagnostic",JSON.stringify(await page.evaluate(()=>{

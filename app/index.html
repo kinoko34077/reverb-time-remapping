@@ -19,6 +19,7 @@
 <section aria-label="比較試聴" class="audition"><h2>比較試聴</h2><div class="modes" role="group" aria-label="方式">
 <button data-mode="dry" aria-pressed="true">Dry</button><button data-mode="normal" aria-pressed="false">Normal</button><button data-mode="reverse" aria-pressed="false">Reverse</button><button data-mode="ir-window" aria-pressed="false">IR Window</button><button data-mode="wet-buffer" aria-pressed="false">Wet Buffer</button><button data-mode="wet-spectral" aria-pressed="false">Wet Spectral</button><button data-mode="ir-spectral" aria-pressed="false">IR Spectral</button>
 </div>
+<div class="transport-row"><div class="modes"><button id="play" disabled>再生</button><button id="pause" disabled>一時停止</button><button id="stop" disabled>先頭へ</button></div></div>
 <div class="source-wave" id="source-wave-panel" aria-label="原音波形">
 <div class="wave-editor-toolbar"><strong>原音波形</strong><output id="source-wave-position">未準備</output><div class="wave-zoom-actions"><button id="wave-zoom-out" type="button" aria-label="波形を縮小">−</button><output id="wave-zoom-label" aria-live="off">—</output><button id="wave-zoom-in" type="button" aria-label="波形を拡大">＋</button></div></div>
 <div class="wave-detail-wrap" id="wave-detail-wrap"><canvas id="wave-detail" role="slider" tabindex="0" aria-label="原音の位置。タップ・ドラッグ・矢印キーで移動、ピンチまたはプラスマイナスで拡縮" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"></canvas>
@@ -29,7 +30,7 @@
 <label>出力音量 (%)<input id="master-volume" type="range" min="0" max="100" step="any" value="100"><output id="master-volume-value">100%</output></label>
 <label>Wet (%)<input id="wet" inputmode="decimal" type="text"></label>
 <label>試聴<select id="solo"><option value="mix">Dry + Wet</option><option value="dry">Dryのみ</option><option value="wet">Wetのみ</option></select></label><button id="apply-mix" disabled>Wet設定を反映</button>
-</div><div class="modes"><button id="play" disabled>再生</button><button id="pause" disabled>一時停止</button><button id="stop" disabled>先頭へ</button></div>
+</div>
 <label>共通時間位置 <output id="time">—</output><input id="seek" type="range" min="0" max="1" step="1" value="0" disabled></label>
 <div id="scrub-axes" hidden>
 <h2>独立参照時間</h2>

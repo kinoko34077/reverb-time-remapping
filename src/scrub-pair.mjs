@@ -8,17 +8,22 @@ export function scrubGains(wet,solo){
 }
 // Buffer freeze is a local raw loop, not a zero-speed PCM sample. The anchor
 // stays fixed while the carrier loops. PV freeze uses the upstream speed=0.
-export function axisPlan({frame,speed,repeat=false},length,sampleRate,processingMode){
+export function axisPlan({frame,speed,repeat=false,rangeStartFrame=0,rangeEndFrame=length},length,sampleRate,processingMode){
   validatePlaybackSpeed(speed);
   if(!Number.isSafeInteger(frame)||frame<0||frame>length||!Number.isSafeInteger(length)||length<1)
     throw RangeError("参照位置が範囲外です");
-  const anchor=Math.min(frame,length-1);
+  if(!Number.isSafeInteger(rangeStartFrame)||!Number.isSafeInteger(rangeEndFrame)||
+    rangeStartFrame<0||rangeStartFrame>=rangeEndFrame||rangeEndFrame>length)
+    throw RangeError("反復区間は開始 < 終了、かつ比較範囲内にしてください");
+  const cursor=repeat&&(frame<rangeStartFrame||frame>=rangeEndFrame)?
+    (speed<0?rangeEndFrame-1:rangeStartFrame):frame;
+  const anchor=Math.min(cursor,length-1);
   if(speed===0&&processingMode==="raw"){
     const width=Math.min(length,Math.max(1,Math.round(.05*sampleRate)));
     const a=Math.min(Math.max(0,anchor-Math.floor(width/2)),length-width);
     return {anchor,frame:anchor,speed:1,a,b:a+width,loop:true,frozen:true};
   }
-  return {anchor,frame:speed<0||speed===0?anchor:frame,speed,a:0,b:length,loop:!!repeat,frozen:speed===0};
+  return {anchor,frame:speed<0||speed===0?anchor:cursor,speed,a:rangeStartFrame,b:rangeEndFrame,loop:!!repeat,frozen:speed===0};
 }
 // Two real shared Worklets. Only the comparison-specific mix, freeze
 // interpretation and ownership live here; no second time/pitch algorithm.
@@ -28,10 +33,10 @@ export async function createScrubPair({ctx,dry,wet,mode,mix,solo,onEvent=()=>{},
     throw RangeError("共通座標のWetキャッシュが必要です");
   let closed=false,running=false,connected=false;
   const tracks={},nodes=[],gains=scrubGains(mix,solo);
-  const state=()=>Object.fromEntries(Object.entries(tracks).map(([k,t])=>[k,{frame:t.config.speed===0?t.anchor:t.frame,speed:t.config.speed,repeat:t.config.repeat,ended:t.ended}]));
+  const state=()=>Object.fromEntries(Object.entries(tracks).map(([k,t])=>[k,{frame:t.config.speed===0?t.anchor:t.frame,speed:t.config.speed,repeat:t.config.repeat,rangeStartFrame:t.config.rangeStartFrame,rangeEndFrame:t.config.rangeEndFrame,ended:t.ended}]));
   const report=(event)=>onEvent({...event,sourceFrame:state().source?.frame??0,running,ended:Object.values(tracks).every(t=>t.ended),axes:state()});
   const setup=async(name,signal,processingMode,value)=>{
-    const config={frame:0,speed:1,repeat:false,...positions[name]};
+    const config={frame:0,speed:1,repeat:false,rangeStartFrame:0,rangeEndFrame:length,...positions[name]};
     const plan=axisPlan(config,length,sr,processingMode);
     const gain=ctx.createGain();gain.gain.value=value;nodes.push(gain);
     const t={config,anchor:plan.anchor,frame:plan.frame,ended:false,gain,processingMode,bridge:null};

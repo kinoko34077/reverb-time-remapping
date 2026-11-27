@@ -25,3 +25,15 @@ test("Wet independent comparison has explicit solo and bounded linear gains",()=
   assert.throws(()=>scrubGains(2,"mix"));
   assert.ok(isScrubMode("wet-buffer")&&isScrubMode("wet-spectral")&&!isScrubMode("normal"));
 });
+
+test("repeat bounds constrain only enabled loop and select signed endpoint",()=>{
+  const bounds={rangeStartFrame:12000,rangeEndFrame:24000};
+  assert.deepEqual(axisPlan({frame:30000,speed:1,repeat:true,...bounds},48000,48000,"raw"),
+    {anchor:12000,frame:12000,speed:1,a:12000,b:24000,loop:true,frozen:false});
+  const reverse=axisPlan({frame:10000,speed:-1,repeat:true,...bounds},48000,48000,"pv");
+  assert.equal(reverse.frame,23999);
+  assert.equal(axisPlan({frame:30000,speed:1,repeat:false,...bounds},48000,48000,"raw").frame,30000);
+  const freeze=axisPlan({frame:18000,speed:0,repeat:true,...bounds},48000,48000,"raw");
+  assert.equal(freeze.anchor,18000);assert.equal(freeze.b-freeze.a,2400);
+  assert.throws(()=>axisPlan({frame:0,speed:1,rangeStartFrame:2,rangeEndFrame:2},48000,48000,"raw"),/反復区間/);
+});

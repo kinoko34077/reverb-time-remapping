@@ -2,6 +2,7 @@ import {makeSource,makeIR,readLocalWav} from "../src/materials.mjs";
 import {prepareComparison} from "../src/comparison-session.mjs";
 import {createPreviewPlayer} from "../src/preview-player.mjs";
 import {isScrubMode} from "../src/scrub-pair.mjs";
+import {secondsToFrames} from "../src/convolution.mjs";
 import {createWetMixBinding,mountWetMixField} from "../src/wet-mix.mjs";
 const $=id=>document.getElementById(id);
 let ctx,player,session,mode="dry",appliedMode="dry",busy=false,seeking=false,sourceFile=null,irFile=null;
@@ -61,7 +62,11 @@ function showAxes(axes){
   if(!axes||!session)return;
   for(const name of ["source","wet"]){
     const axis=axes[name];if(!axis)continue;
-    savedAxes[name]={frame:Math.round(axis.frame),speed:axis.speed,repeat:axis.repeat};
+    savedAxes[name]={frame:Math.round(axis.frame),speed:axis.speed,repeat:axis.repeat,
+      rangeStartFrame:axis.rangeStartFrame,rangeEndFrame:axis.rangeEndFrame};
+    const seconds=frame=>(session.interval.start+frame)/session.sampleRate;
+    $(name+"-range-applied").textContent=(axis.repeat?"反復中: ":"反復範囲: ")+
+      seconds(axis.rangeStartFrame).toFixed(4)+" – "+seconds(axis.rangeEndFrame).toFixed(4)+" s";
     if(!dragging.has(name)){
       $(name+"-seek").value=String(Math.round(axis.frame));
       $(name+"-position").textContent=((session.interval.start+axis.frame)/session.sampleRate).toFixed(3)+" s";
@@ -77,7 +82,7 @@ function controls(){
   $("ir-window-scrub").disabled=(busy&&!windowApplying)||!session||appliedMode!=="ir-window";
   if(windowApplying)for(const id of ["ir-window-start","ir-window-length","ir-calibration"])$(id).disabled=false;
   $("scrub-axes").hidden=!isScrubMode(appliedMode);
-  for(const name of ["source","wet"])for(const suffix of ["seek","speed","repeat"])
+  for(const name of ["source","wet"])for(const suffix of ["seek","speed","repeat","range-start","range-end"])
     $(name+"-"+suffix).disabled=busy||!session||!isScrubMode(appliedMode);
 }
 function show(frame){
@@ -130,7 +135,14 @@ $("prepare").onclick=()=>run(async()=>{
   const next=await prepareComparison(source,ir,{predelay:readNumber("predelay")/1000,irWindow:readWindow()});
   await loadMode(next,mode,{frame:0,resume:false,reset:true});
   session=next;savedAxes={};seek.max=String(next.length);show(0);
-  for(const name of ["source","wet"]){$(name+"-seek").max=String(next.length-1);$(name+"-speed").value="1";$(name+"-repeat").checked=false;}
+  for(const name of ["source","wet"]){
+    $(name+"-seek").max=String(next.length-1);$(name+"-speed").value="1";$(name+"-repeat").checked=false;
+    const a=next.interval.start/next.sampleRate,b=(next.interval.start+next.length)/next.sampleRate;
+    for(const suffix of ["range-start","range-end"]){
+      $(name+"-"+suffix).min=String(a);$(name+"-"+suffix).max=String(b);
+    }
+    $(name+"-range-start").value=String(a);$(name+"-range-end").value=String(b);
+  }
   showAxes(player.state.axes);
   showWindow(next);
   message("準備済み: "+mode);status.dataset.prepared="true";
@@ -155,7 +167,18 @@ for(const name of ["source","wet"]){
   slider.oninput=()=>{dragging.add(name);$(name+"-position").textContent=((session.interval.start+Number(slider.value))/session.sampleRate).toFixed(3)+" s（要求）";};
   slider.onchange=()=>{const frame=Number(slider.value);dragging.delete(name);void run(async()=>{await player.configureAxis(name,{frame});showAxes(player.state.axes);});};
   speed.onchange=()=>run(async()=>{if(!speed.value.trim())throw Error("速度を入力してください");await player.configureAxis(name,{speed:Number(speed.value)});showAxes(player.state.axes);});
-  repeat.onchange=()=>run(async()=>{await player.configureAxis(name,{repeat:repeat.checked});showAxes(player.state.axes);});
+  const applyRange=()=>run(async()=>{
+    const toFrame=id=>secondsToFrames(readNumber(id),session.sampleRate)-session.interval.start;
+    await player.configureAxis(name,{repeat:repeat.checked,
+      rangeStartFrame:toFrame(name+"-range-start"),rangeEndFrame:toFrame(name+"-range-end")});
+    showAxes(player.state.axes);message(name+" の反復区間を適用");
+  });
+  // Disabling repeat must not depend on the validity of the edited draft.
+  repeat.onchange=()=>repeat.checked?applyRange():run(async()=>{
+    await player.configureAxis(name,{repeat:false});
+    showAxes(player.state.axes);message(name+" の反復を解除");
+  });
+  $(name+"-range-start").onchange=applyRange;$(name+"-range-end").onchange=applyRange;
 }
 $("ir-window-scrub").oninput=()=>{$("ir-window-start").value=$("ir-window-scrub").value;requestWindow();};
 for(const id of ["ir-window-start","ir-window-length","ir-calibration"])$(id).onchange=requestWindow;

@@ -82,6 +82,37 @@ test("real Wet Buffer/PV Worklets keep independent axes and non-DC freeze output
     await page.click("#pause");await enabled();
     await page.click("#play");await enabled();await audible();assert.equal(await pos("wet"),30000);
     await page.click("#pause");await enabled();
+    // Arbitrary repeat uses the original common frame coordinates.
+    await field("source-seek",16000);await field("source-speed",0);
+    const offset=Number(await page.$eval("#wet-range-start",el=>el.value));
+    await field("wet-range-start",offset+24000/48000);
+    await field("wet-range-end",offset+30000/48000);
+    await field("wet-speed",1);
+    await page.$eval("#wet-repeat",el=>{el.checked=true;el.dispatchEvent(new Event("change"));});await enabled();
+    await field("wet-seek",27000);
+    await page.click("#play");await enabled();
+    const rangeSamples=await page.evaluate(async()=>{
+      const samples=[];for(let i=0;i<40;i++){
+        await new Promise(r=>setTimeout(r,15));
+        samples.push(Number(document.querySelector("#wet-seek").value));
+      }return samples;
+    });
+    assert.ok(rangeSamples.every(v=>v>=24000&&v<30000),JSON.stringify(rangeSamples));
+    assert.ok(rangeSamples.some((v,i)=>i&&v<rangeSamples[i-1]),JSON.stringify(rangeSamples));
+    assert.equal(await pos("source"),16000);await audible();
+    await page.click("#pause");await enabled();
+    const applied=await page.$eval("#wet-range-applied",el=>el.textContent);
+    await field("wet-range-end",offset+23000/48000);
+    assert.match(await page.$eval("#status",el=>el.textContent),/反復区間/);
+    assert.equal(await page.$eval("#wet-range-applied",el=>el.textContent),applied);
+    // The user must be able to escape an active loop with an invalid draft.
+    await page.$eval("#wet-repeat",el=>{el.checked=false;el.dispatchEvent(new Event("change"));});await enabled();
+    assert.match(await page.$eval("#wet-range-applied",el=>el.textContent),/^反復範囲:/);
+    assert.equal(Number(await page.$eval("#wet-range-end",el=>el.value)),offset+23000/48000);
+    await field("wet-range-end",offset+30000/48000);
+    await page.$eval("#wet-repeat",el=>{el.checked=true;el.dispatchEvent(new Event("change"));});await enabled();
+    await choose("wet-spectral");
+    assert.equal(await page.$eval("#wet-range-applied",el=>el.textContent),applied);
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
     assert.deepEqual(errors,[]);
   }finally{await cleanupTestProcesses(browser,[server]);}

@@ -11,7 +11,7 @@ const stereo="//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAIAA
 test("actual MP3 source and IR import, comparison, and last-good rejection",async()=>{
   assert.equal(createHash("sha256").update(Buffer.from(mono,"base64")).digest("hex"),"1d62135b36a0c015a4b8e1e653c4436197636774cf3c2b487da4b8ef7417d368");
   assert.equal(createHash("sha256").update(Buffer.from(stereo,"base64")).digest("hex"),"d9d7a9f25486fd108f8ff0ddca58315bbd69fd5dd41dadafbd8b63d437e1867c");
-  const port=18772,server=spawn("python3",["-m","http.server",String(port),"--bind","127.0.0.1"],{stdio:"ignore"});
+  const port=18772,server=spawn(process.env.PYTHON_BIN||"python3",["-m","http.server",String(port),"--bind","127.0.0.1"],{stdio:"ignore"});
   let browser;
   try{
     browser=await puppeteer.launch({executablePath:process.env.CHROME_BIN||"/usr/bin/google-chrome",headless:true,args:["--no-sandbox","--disable-dev-shm-usage","--mute-audio","--autoplay-policy=no-user-gesture-required"]});
@@ -39,13 +39,11 @@ test("actual MP3 source and IR import, comparison, and last-good rejection",asyn
       const input=document.querySelector("#"+id);input.files=d.files;input.dispatchEvent(new Event("change"));
     },id,bytes,name);
     await select("source-file",mono,"mono.mp3");
-    await page.waitForFunction(()=>document.querySelector("#source").value==="file"&&!document.querySelector("#prepare").disabled);
+    await page.waitForFunction(()=>document.querySelector("#source").value==="file");
     await select("ir-file",stereo,"stereo.mp3");
-    await page.waitForFunction(()=>document.querySelector("#ir").value==="file"&&!document.querySelector("#prepare").disabled);
-    await page.$eval("#ir-window-start",el=>el.value="0");
-    await page.$eval("#ir-window-length",el=>el.value="50");
-    await page.click("#prepare");
-    await page.waitForFunction(()=>document.querySelector("#status").textContent.includes("準備済み")&&!document.querySelector("#play").disabled);
+    await page.waitForFunction(max=>document.querySelector("#ir").value==="file"&&
+      document.querySelector("#status").textContent.startsWith("準備済み")&&
+      Number(document.querySelector("#seek").max)===max,{timeout:30000},result.lenA+2*(result.lenB-1));
     await page.click('[data-mode="normal"]');
     await page.waitForFunction(()=>document.querySelector('[data-mode="normal"]').getAttribute("aria-pressed")==="true"&&!document.querySelector("#play").disabled);
     const max=await page.$eval("#seek",el=>Number(el.max));
@@ -56,7 +54,7 @@ test("actual MP3 source and IR import, comparison, and last-good rejection",asyn
     await page.waitForFunction(()=>Number(document.querySelector("#status").dataset.renderedFrames)>256);
     for(const [id,selector] of [["source-file","#source"],["ir-file","#ir"]]){
       await select(id,"YmFk","bad.mp3");
-      await page.waitForFunction(()=>document.querySelector("#status").textContent.includes("処理できません")&&!document.querySelector("#play").disabled);
+      await page.waitForFunction(()=>document.querySelector("#status").textContent.includes("読み込めません")&&!document.querySelector("#play").disabled);
       assert.equal(await page.$eval(selector,el=>el.value),"file");
       assert.equal(await page.$eval("#seek",el=>Number(el.max)),max);
       assert.equal(await page.$eval('[data-mode="normal"]',el=>el.getAttribute("aria-pressed")),"true");

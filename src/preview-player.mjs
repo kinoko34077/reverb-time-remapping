@@ -78,14 +78,47 @@ export function createPreviewPlayer(ctx,{onState=()=>{}}={}){
       if(stale())return abandon();
       release(current,route);current=next;route=nextRoute;
       position=target;running=false;route.gain.value=appliedGain;
-      if(resume&&(scrub||target<length)){await current.play();running=true;}
+      if(resume&&(scrub||target<length)){
+        const active=current;
+        await active.play();
+        if(stale()){
+          try{await active.pause();}catch{}
+          if(current===active)running=false;
+          return false;
+        }
+        running=true;
+      }
       report({phase:"ready"});return true;
     }catch(error){if(next!==current)release(next,nextRoute);throw error;}
     finally{if(timer!==null)clearTimeout(timer);wake=null;}
   }
-  async function play(){ensure();if(!current)return;await current.play();running=true;report({phase:"accepted"});}
-  async function pause(){ensure();if(!current)return;const receipt=await current.pause();position=receipt.sourceFrame;running=false;report({phase:"accepted"});}
-  async function seek(frame){ensure();if(!current)return;const receipt=await current.seek(Math.round(frame));if(!receipt.stale){position=receipt.sourceFrame;report({phase:"accepted"});}}
+  async function play(){
+    ensure();if(!current)return false;
+    const token=revision,target=current;
+    await target.play();
+    if(disposed||current!==target||token!==revision){try{await target.pause();}catch{}return false;}
+    running=true;report({phase:"accepted"});return true;
+  }
+  async function pause(){
+    ensure();if(!current)return;
+    const token=revision,target=current,receipt=await target.pause();
+    if(disposed||current!==target||token!==revision)return;
+    position=receipt.sourceFrame;running=false;report({phase:"accepted"});
+  }
+  async function stop(){
+    ensure();const token=++revision,target=current;
+    if(!target){position=0;running=false;report({phase:"stopped"});return;}
+    await target.pause();
+    if(disposed||current!==target||token!==revision)return;
+    const receipt=await target.seek(0);
+    if(disposed||current!==target||token!==revision)return;
+    position=receipt?.sourceFrame??0;running=false;report({phase:"stopped"});
+  }
+  async function seek(frame){
+    ensure();if(!current)return;
+    const token=revision,target=current,receipt=await target.seek(Math.round(frame));
+    if(!receipt.stale&&!disposed&&current===target&&token===revision){position=receipt.sourceFrame;report({phase:"accepted"});}
+  }
   async function configureAxis(name,config){ensure();if(!current?.configure)throw Error("この方式は独立軸を使用しません");return current.configure(name,config);}
   function setCalibration(mode){if(!current?.setCalibration)return false;return current.setCalibration(mode);}
   function setMix(mix,solo){if(!current?.setMix)return false;current.setMix(mix,solo);return true;}
@@ -98,5 +131,5 @@ export function createPreviewPlayer(ctx,{onState=()=>{}}={}){
     for(const prior of retiring)release(prior.bridge,prior.node);retiring.clear();
     gain.disconnect();volume.disconnect();ceiling.disconnect();
   }
-  return {load,play,pause,seek,configureAxis,setMix,setCalibration,setVolume,dispose,get state(){return {position,running,axes:current?.axes,calibration:current?.calibration};}};
+  return {load,play,pause,stop,seek,configureAxis,setMix,setCalibration,setVolume,dispose,get state(){return {position,running,axes:current?.axes,calibration:current?.calibration};}};
 }

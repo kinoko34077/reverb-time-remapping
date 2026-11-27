@@ -81,7 +81,7 @@ export async function createScrubPair({ctx,dry,wet,mode,mix,solo,calibration="na
   }
   function ensure(){if(closed)throw Error("再生機構を終了しました");}
   async function prepareRoute(t,config,source){
-    const route={reader:source.reader,node:ctx.createGain(),bridge:null,receipt:null,resolve:null,reject:null};
+    const route={reader:source.reader,node:ctx.createGain(),bridge:null,receipt:null,resolve:null,reject:null,paused:false};
     route.node.gain.value=0;routes.add(route);
     try{
       route.bridge=await createSourcePCMBridge({ctx,...(source.reader?{source:source.reader}:{sourceChannels:t.signal.channels}),
@@ -114,7 +114,7 @@ export async function createScrubPair({ctx,dry,wet,mode,mix,solo,calibration="na
     try{
       await route.bridge.play();
       if(route.failure)throw route.failure;
-      if(!route.receipt)await new Promise((resolve,reject)=>{
+      if(!route.receipt&&!route.paused)await new Promise((resolve,reject)=>{
         route.resolve=resolve;route.reject=reject;
         timer=setTimeout(()=>reject(Error("往復参照の音声出力準備を確認できません")),2500);
       });
@@ -199,12 +199,14 @@ export async function createScrubPair({ctx,dry,wet,mode,mix,solo,calibration="na
   return {
     connect(destination){for(const t of Object.values(tracks))(t.level??t.gain).connect(destination);connected=true;},
     async play(){await Promise.all(Object.values(tracks).map(t=>t.route.bridge.play()));running=true;report({type:"pair-accepted"});},
-    async pause(){const active=Object.values(tracks),staged=[...stagedRoutes].filter(route=>routes.has(route));
+    async pause(){const active=Object.values(tracks),activeRoutes=new Set(active.map(t=>t.route));
+      const staged=[...stagedRoutes].filter(route=>routes.has(route)&&!activeRoutes.has(route));
       const receipts=await Promise.all([
         ...active.map(t=>t.route.bridge.pause()),
         ...staged.map(route=>route.bridge.pause().catch(error=>{if(routes.has(route))throw error;return null;}))
       ]);
       active.forEach((t,i)=>updateFrame(t,t.route,receipts[i].sourceFrame));running=false;
+      staged.forEach(route=>{route.paused=true;route.resolve?.(null);});
       report({type:"pair-accepted"});return {sourceFrame:state().source.frame};},
     async seek(frame){await Promise.all(["source","wet"].map(name=>configure(name,{frame})));return {sourceFrame:state().source.frame};},
     configure,dispose,get axes(){return state();},get calibration(){return calibrationState();},

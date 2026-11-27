@@ -36,7 +36,8 @@ async function openApp(){
       window.__renderGate={holding:false,releases:[]};
       window.__spectralGate={holding:false,held:[]};
       window.__workerMessages=[];
-      window.__playGate={holding:false,held:[],heldPorts:[],portIds:new WeakMap(),nextPortId:0,recording:false,messages:[],stoppedAt:0};
+      window.__playGate={holding:false,held:[],heldPorts:[],portIds:new WeakMap(),nextPortId:0,
+        holdRenderPort:null,heldRenderApplied:[],recording:false,messages:[],stoppedAt:0};
       if(globalThis.OfflineAudioContext){
         const prototype=OfflineAudioContext.prototype,original=prototype.startRendering;
         prototype.startRendering=function(...args){
@@ -73,6 +74,9 @@ async function openApp(){
             const message=event.data||{};
             if(window.__playGate.recording&&["progress","render-applied","command-accepted"].includes(message.type))
               window.__playGate.messages.push({portId,type:message.type,op:message.op,time:performance.now()});
+            if(message.type==="render-applied"&&window.__playGate.holdRenderPort===portId){
+              window.__playGate.heldRenderApplied.push(()=>handler.call(port,event));return;
+            }
             if(window.__playGate.holding&&message.type==="command-accepted"&&message.op==="play"){
               window.__playGate.heldPorts.push(portId);window.__playGate.held.push(()=>handler.call(port,event));return;
             }
@@ -104,6 +108,7 @@ async function closeApp({browser,page,server}){
     window.__renderGate.holding=false;for(const release of window.__renderGate.releases.splice(0))release();
     window.__spectralGate.holding=false;for(const release of window.__spectralGate.held.splice(0))release();
     window.__playGate.holding=false;for(const release of window.__playGate.held.splice(0))release();
+    window.__playGate.holdRenderPort=null;for(const release of window.__playGate.heldRenderApplied.splice(0))release();
   });}catch{}
   await cleanupTestProcesses(browser);
   server.closeAllConnections();
@@ -390,6 +395,54 @@ test("Stop cancels a pingpong route staged while Wet Buffer is playing",async()=
     assert.equal(postStopProgress,0,"the staged pingpong Worklet must stop producing after Stop completes");
     const rms=await outputRMS(page);
     assert.ok(rms<.005,`audio must remain stopped after the staged pingpong route resolves (RMS=${rms})`);
+    assert.deepEqual(app.errors,[]);
+  }finally{await closeApp(app);}
+});
+
+test("Stop settles a staged route whose first render is not ready yet",async()=>{
+  const app=await openApp();
+  try{
+    const {page}=app;
+    await prepare(page);
+    await page.click('[data-mode="wet-buffer"]');
+    await page.waitForFunction(()=>document.querySelector('[data-mode="wet-buffer"]').getAttribute("aria-pressed")==="true"&&
+      !document.querySelector("#play").disabled,{timeout:10000});
+    await page.select("#solo","wet");
+    await page.waitForFunction(()=>!document.querySelector("#solo").disabled,{timeout:10000});
+    await page.click("#play");
+    await page.waitForFunction(()=>Number(document.querySelector("#status").dataset.renderedFrames)>0,{timeout:10000});
+    await page.select("#wet-loop-style","pingpong");
+    await page.waitForFunction(()=>document.querySelector("#status").textContent.includes("wet の反復区間を適用"),{timeout:10000});
+    const candidatePort=await page.evaluate(()=>{
+      window.__playGate.holding=true;
+      window.__playGate.recording=true;
+      window.__playGate.messages=[];
+      const port=window.__playGate.nextPortId+1;
+      window.__playGate.holdRenderPort=port;
+      return port;
+    });
+    await page.$eval("#wet-repeat",field=>{field.checked=true;field.dispatchEvent(new Event("change",{bubbles:true}));});
+    await page.waitForFunction(port=>window.__playGate.heldPorts.includes(port)&&
+      window.__playGate.heldRenderApplied.length>0,{timeout:10000},candidatePort);
+
+    await page.click("#stop");
+    await page.waitForFunction(()=>document.querySelector("#status").textContent==="先頭",{timeout:5000});
+    await page.evaluate(()=>{window.__playGate.stoppedAt=performance.now();});
+    await page.evaluate(()=>{
+      window.__playGate.holdRenderPort=null;
+      window.__playGate.heldRenderApplied.splice(0);
+      window.__playGate.holding=false;
+      for(const release of window.__playGate.held.splice(0))release();
+    });
+    await page.waitForFunction(()=>!document.querySelector("#wet-repeat").disabled,{timeout:10000});
+    assert.match(await page.$eval("#wet-range-applied",field=>field.textContent),/^往復中:/,
+      "Stop should settle the staged route readiness and preserve the requested setting");
+    assert.equal(await page.$eval("#play",button=>button.disabled),false,"Play should remain available after Stop");
+    await new Promise(resolve=>setTimeout(resolve,200));
+    const postStopProgress=await page.evaluate(portId=>window.__playGate.messages.filter(message=>
+      message.portId===portId&&message.type==="progress"&&message.time>=window.__playGate.stoppedAt).length,candidatePort);
+    assert.equal(postStopProgress,0,"the staged route must not advance after Stop");
+    assert.ok(await outputRMS(page)<.005,"the staged route must stay silent while stopped");
     assert.deepEqual(app.errors,[]);
   }finally{await closeApp(app);}
 });

@@ -17,7 +17,7 @@
 <button data-mode="dry" aria-pressed="true">Dry</button><button data-mode="normal" aria-pressed="false">Normal</button><button data-mode="reverse" aria-pressed="false">Reverse</button>
 </div><div class="fields">
 <label>Wet (%)<input id="wet" inputmode="decimal" type="text"></label>
-<label>試聴<select id="solo"><option value="mix">Dry + Wet</option><option value="dry">Dryのみ</option><option value="wet">Wetのみ</option></select></label>
+<label>試聴<select id="solo"><option value="mix">Dry + Wet</option><option value="dry">Dryのみ</option><option value="wet">Wetのみ</option></select></label><button id="apply-mix" disabled>Wet設定を反映</button>
 </div><div class="modes"><button id="play" disabled>再生</button><button id="pause" disabled>一時停止</button><button id="stop" disabled>先頭へ</button></div>
 <label>共通時間位置 <output id="time">—</output><input id="seek" type="range" min="0" max="1" step="1" value="0" disabled></label>
 <output id="gain">—</output><p id="status" role="status" aria-live="polite">比較音を準備してください。</p>

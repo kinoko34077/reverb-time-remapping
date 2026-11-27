@@ -9,6 +9,16 @@ test("regular entry prepares audio, switches comparison, seeks and retains last 
   try{
     browser=await puppeteer.launch({executablePath:process.env.CHROME_BIN||"/usr/bin/google-chrome",headless:true,args:["--no-sandbox","--disable-dev-shm-usage","--mute-audio","--autoplay-policy=no-user-gesture-required"]});
     const page=await browser.newPage(),errors=[];page.on("pageerror",e=>errors.push(e.message));
+    // Observe actual output at the real preview GainNode; no substitute DSP.
+    await page.evaluateOnNewDocument(()=>{
+      const original=AudioContext.prototype.createGain;
+      AudioContext.prototype.createGain=function(){
+        const node=original.call(this);
+        const tap=this.createAnalyser();tap.fftSize=2048;
+        node.connect(tap);window.__observedOutput=tap;
+        return node;
+      };
+    });
     await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});
     let ready=false;
     for(let i=0;i<30&&!ready;i++){
@@ -23,6 +33,11 @@ test("regular entry prepares audio, switches comparison, seeks and retains last 
     await page.waitForFunction(()=>document.querySelector('[data-mode="normal"]').getAttribute("aria-pressed")==="true"&&!document.querySelector("#play").disabled);
     await page.click("#play");
     await page.waitForFunction(()=>Number(document.querySelector("#status").dataset.renderedFrames)>256);
+    await page.waitForFunction(()=>{
+      const tap=window.__observedOutput;if(!tap)return false;
+      const pcm=new Float32Array(tap.fftSize);tap.getFloatTimeDomainData(pcm);
+      return pcm.every(Number.isFinite)&&pcm.some(x=>Math.abs(x)>.001)&&pcm.every(x=>Math.abs(x)<=.900001);
+    });
     await page.click("#pause");
     await page.waitForFunction(()=>document.querySelector("#status").textContent==="一時停止"&&!document.querySelector("#seek").disabled);
     await page.$eval("#seek",el=>{el.value="24000";el.dispatchEvent(new Event("input"));el.dispatchEvent(new Event("change"));});
@@ -31,6 +46,9 @@ test("regular entry prepares audio, switches comparison, seeks and retains last 
     await page.click('[data-mode="reverse"]');
     await page.waitForFunction(()=>document.querySelector('[data-mode="reverse"]').getAttribute("aria-pressed")==="true"&&!document.querySelector("#seek").disabled);
     assert.equal(await page.$eval("#seek",el=>Number(el.value)),before);
+    await page.focus("#wet");await page.$eval("#wet",el=>{el.value="75.125";el.dispatchEvent(new Event("input"));});
+    await page.click("#apply-mix");
+    await page.waitForFunction(()=>document.querySelector("#status").textContent.includes("75.125%")&&!document.querySelector("#seek").disabled);
     await page.evaluate(()=>{
       const d=new DataTransfer();d.items.add(new File(["bad"],"bad.wav",{type:"audio/wav"}));
       const input=document.querySelector("#source-file");input.files=d.files;input.dispatchEvent(new Event("change"));

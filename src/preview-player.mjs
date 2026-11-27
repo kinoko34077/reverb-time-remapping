@@ -22,10 +22,10 @@ export function createPreviewPlayer(ctx,{onState=()=>{}}={}){
           }else if(event.type==="fatal-error"){running=false;report({error:event.message,event});}
         }});
       if(disposed||token!==revision){next.dispose();return false;}
-      if(current)await current.pause();
+      const paused=current?await current.pause():null;
       if(disposed||token!==revision){next.dispose();return false;}
-      // Capture the pause receipt before switching to preserve the position.
-      const target=resume?Math.min(length,Math.max(0,Math.round(current?.latest?.sourceFrame??position))):initial;
+      // The command receipt is newer than a periodic progress snapshot.
+      const target=resume?Math.min(length,Math.max(0,Math.round(paused?.sourceFrame??position))):initial;
       if(target!==initial)await next.seek(target);
       if(disposed||token!==revision){next.dispose();return false;}
       current?.dispose();current=next;

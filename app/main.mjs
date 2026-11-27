@@ -9,7 +9,7 @@ function message(s){status.textContent=s;}
 function controls(){
   for(const id of ["source","source-file","ir","ir-file","frequency","ir-length","predelay","prepare","wet","solo"])$(id).disabled=busy;
   for(const b of document.querySelectorAll("[data-mode]")){b.disabled=busy||!session;b.setAttribute("aria-pressed",String(b.dataset.mode===appliedMode));}
-  for(const id of ["play","pause","stop","seek"])$(id).disabled=busy||!session;
+  for(const id of ["play","pause","stop","seek","apply-mix"])$(id).disabled=busy||!session;
 }
 function show(frame){
   if(!session)return;
@@ -32,7 +32,7 @@ async function audio(){
   await ctx.resume();
 }
 const binding=createWetMixBinding();
-mountWetMixField({field:$("wet"),binding,onChanged:()=>{message("Wet設定変更。方式を再選択すると反映します。");}});
+mountWetMixField({field:$("wet"),binding,onChanged:()=>{message("Wet設定変更・未反映。Wet設定を反映、または方式を切り替えてください。");}});
 async function choose(next){
   if(!session)return;
   await audio();
@@ -61,6 +61,7 @@ for(const [id,select,set] of [["source-file","source",v=>sourceFile=v],["ir-file
 }
 for(const button of document.querySelectorAll("[data-mode]"))button.onclick=()=>run(()=>choose(button.dataset.mode));
 $("solo").onchange=()=>run(()=>choose(mode));
+$("apply-mix").onclick=()=>run(()=>choose(mode));
 $("play").onclick=()=>run(async()=>{await audio();if(player.state.position>=session.length)await player.seek(0);await player.play();message("再生要求を適用");});
 $("pause").onclick=()=>run(async()=>{await player.pause();message("一時停止");});
 $("stop").onclick=()=>run(async()=>{await player.pause();await player.seek(0);show(0);message("先頭");});

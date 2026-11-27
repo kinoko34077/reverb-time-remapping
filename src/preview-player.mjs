@@ -43,7 +43,8 @@ export function createPreviewPlayer(ctx,{onState=()=>{}}={}){
       current?.dispose();current=next;
       position=target;running=false;
       gain.gain.value=appliedGain;current.connect(gain);
-      if(resume&&target<length){await current.play();running=true;}
+      // A paired transport may have exhausted Source while Wet continues.
+      if(resume&&(scrub||target<length)){await current.play();running=true;}
       report({phase:"ready"});return true;
     }catch(error){if(next&&next!==current)next.dispose();throw error;}
   }

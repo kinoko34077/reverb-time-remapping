@@ -68,6 +68,20 @@ test("real Wet Buffer/PV Worklets keep independent axes and non-DC freeze output
     await page.click("#play");await enabled();
     await page.waitForFunction(()=>Number(document.querySelector("#wet-seek").value)>30000);
     await page.click("#pause");await enabled();
+    // Source exhaustion must not stop a frozen Wet when replacing a pair.
+    await page.$eval("#wet-repeat",el=>{el.checked=false;el.dispatchEvent(new Event("change"));});await enabled();
+    await field("wet-seek",30000);await field("wet-speed",0);
+    const last=await page.$eval("#source-seek",el=>Number(el.max));
+    await field("source-seek",last-64);await field("source-speed",1);
+    await page.click("#play");await enabled();
+    await page.waitForFunction(()=>Number(document.querySelector("#source-seek").value)===Number(document.querySelector("#source-seek").max));
+    assert.equal(await pos("wet"),30000);await audible();
+    await choose("wet-buffer");
+    await new Promise(r=>setTimeout(r,250));await audible();
+    assert.equal(await pos("wet"),30000);assert.equal(await pos("source"),last);
+    await page.click("#pause");await enabled();
+    await page.click("#play");await enabled();await audible();assert.equal(await pos("wet"),30000);
+    await page.click("#pause");await enabled();
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
     assert.deepEqual(errors,[]);
   }finally{await cleanupTestProcesses(browser,[server]);}

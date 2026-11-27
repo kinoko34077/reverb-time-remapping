@@ -13,7 +13,7 @@ export function createPreviewPlayer(ctx,{onState=()=>{}}={}){
   const report=(extra={})=>onState({position,running,...extra});
   function ensure(){if(disposed)throw Error("再生機構は終了済みです");}
   function release(bridge,node){bridge?.dispose();node?.disconnect();}
-  async function load(signal,appliedGain,{frame=position,resume=running,scrub=null,positions={},crossfade=false}={}){
+  async function load(signal,appliedGain,{frame=position,resume=running,reset=false,scrub=null,positions={},crossfade=false}={}){
     ensure();const token=++revision;
     const length=signal.channels[0].length,initial=Math.min(length,Math.max(0,Math.round(frame)));
     let next,nextRoute,readyEvent=null,wake=null,timer=null;
@@ -68,7 +68,7 @@ export function createPreviewPlayer(ctx,{onState=()=>{}}={}){
       }
       const paused=current?await current.pause():null;
       if(stale())return abandon();
-      const target=resume?Math.min(length,Math.max(0,Math.round(paused?.sourceFrame??position))):initial;
+      const target=reset?initial:resume?Math.min(length,Math.max(0,Math.round(paused?.sourceFrame??position))):initial;
       if(target!==initial){
         if(scrub){
           await next.configure("source",{frame:target});

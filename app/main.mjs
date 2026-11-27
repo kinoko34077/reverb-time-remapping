@@ -9,6 +9,7 @@ import {createSourceWaveView} from "./source-wave-view.mjs";
 const $=id=>document.getElementById(id);
 let ctx,player,session,mode="dry",appliedMode="dry",busy=false,seeking=false,sourceFile=null,irFile=null;
 let sourceFileRevision=0,preparationRevision=0,preparationWork=null,queuedPreparation=null;
+const fileReadRevision={source:0,ir:0};
 let appliedSourceKey=null,stopRevision=0,wetApplyTimer=null;
 let explicitStopIntent=false,stopping=false;
 const status=$("status"),seek=$("seek");
@@ -103,7 +104,7 @@ function requestWindow(kind="ir-window"){
   }catch(error){cancelWindowRequests();message("IRを更新できません: "+error.message);}
 }
 function pumpWindow(){
-  if(busy||windowWork||!queuedWindow)return;
+  if(busy||preparationWork||queuedPreparation||windowWork||!queuedWindow)return;
   const job=queuedWindow;queuedWindow=null;
   windowWork=(async()=>{
     try{
@@ -265,6 +266,7 @@ function pumpPreparation(){
   })().finally(()=>{
     preparationWork=null;
     if(queuedPreparation&&!busy)pumpPreparation();
+    else if(!busy)pumpWindow();
   });
 }
 async function applyPreparation(job,next){
@@ -297,23 +299,26 @@ async function applyPreparation(job,next){
   });
 }
 $("prepare").onclick=requestPreparation;
-$("source").onchange=requestPreparation;
-$("ir").onchange=requestPreparation;
+$("source").onchange=()=>{fileReadRevision.source++;requestPreparation();};
+$("ir").onchange=()=>{fileReadRevision.ir++;requestPreparation();};
 $("frequency").onchange=()=>{if($("source").value!=="file")requestPreparation();};
 $("ir-length").onchange=()=>{if($("ir").value!=="file")requestPreparation();};
 $("predelay").onchange=requestPreparation;
 for(const [id,select,set] of [["source-file","source",v=>sourceFile=v],["ir-file","ir",v=>irFile=v]]){
   $(id).onchange=async()=>{
+    const revision=++fileReadRevision[select];
     const file=$(id).files?.[0];if(!file)return;
     // Keep AudioContext activation inside the user-selected file gesture.
     if(!player)void audio().catch(()=>{});
     try{
-      const data=await readLocalAudio(file);set(data);
+      const data=await readLocalAudio(file);
+      if(revision!==fileReadRevision[select])return;
+      set(data);
       if(select==="source")sourceFileRevision++;
       const opt=$(select).querySelector('[value="file"]');opt.disabled=false;$(select).value="file";
       requestPreparation();
-    }catch(error){message(file.name+" を読み込めません: "+error.message);}
-    finally{$(id).value="";}
+    }catch(error){if(revision===fileReadRevision[select])message(file.name+" を読み込めません: "+error.message);}
+    finally{if(revision===fileReadRevision[select])$(id).value="";}
   };
 }
 for(const button of document.querySelectorAll("[data-mode]"))button.onclick=()=>run(()=>choose(button.dataset.mode));

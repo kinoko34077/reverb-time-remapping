@@ -215,15 +215,20 @@ const binding=createWetMixBinding();
 let wetApplyRequested=false;
 function scheduleWetApply(){
   if(!session)return;
+  wetApplyRequested=true;
   clearTimeout(wetApplyTimer);
-  wetApplyTimer=setTimeout(()=>{wetApplyTimer=null;wetApplyRequested=true;flushWetApply();},120);
+  wetApplyTimer=null;
+  if(document.activeElement===$("wet"))return;
+  wetApplyTimer=setTimeout(()=>{wetApplyTimer=null;flushWetApply();},120);
 }
 function flushWetApply(){
+  if(document.activeElement===$("wet"))return;
   if(!wetApplyRequested||busy||!session)return;
   wetApplyRequested=false;
   void run(()=>choose(mode));
 }
 mountWetMixField({field:$("wet"),binding,onChanged:scheduleWetApply});
+$("wet").addEventListener("blur",scheduleWetApply);
 async function loadMode(target,next,options={}){
   if(isScrubMode(next)){
     const positions=options.reset?{}:{...savedAxes,

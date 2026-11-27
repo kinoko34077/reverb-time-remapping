@@ -102,6 +102,7 @@ test("regular entry prepares audio, switches comparison, seeks and retains last 
     await page.waitForFunction(()=>document.querySelector('[data-mode="reverse"]').getAttribute("aria-pressed")==="true"&&!document.querySelector("#seek").disabled);
     assert.equal(await page.$eval("#seek",el=>Number(el.value)),before);
     await page.focus("#wet");await page.$eval("#wet",el=>{el.value="75.125";el.dispatchEvent(new Event("input"));});
+    await page.$eval("#wet",el=>el.blur());
     await page.waitForFunction(()=>document.querySelector("#status").textContent.includes("75.125%")&&!document.querySelector("#seek").disabled);
     await page.evaluate(()=>{
       const d=new DataTransfer();d.items.add(new File(["bad"],"bad.wav",{type:"audio/wav"}));

@@ -36,7 +36,7 @@ async function openApp(){
       window.__renderGate={holding:false,releases:[]};
       window.__spectralGate={holding:false,held:[]};
       window.__workerMessages=[];
-      window.__playGate={holding:false,held:[]};
+      window.__playGate={holding:false,held:[],heldPorts:[],portIds:new WeakMap(),nextPortId:0,recording:false,messages:[],stoppedAt:0};
       if(globalThis.OfflineAudioContext){
         const prototype=OfflineAudioContext.prototype,original=prototype.startRendering;
         prototype.startRendering=function(...args){
@@ -67,10 +67,14 @@ async function openApp(){
         set(handler){
           if(typeof handler!=="function"){messageHandler.set.call(this,handler);return;}
           const port=this;
+          let portId=window.__playGate.portIds.get(port);
+          if(portId===undefined){portId=++window.__playGate.nextPortId;window.__playGate.portIds.set(port,portId);}
           messageHandler.set.call(port,event=>{
             const message=event.data||{};
+            if(window.__playGate.recording&&["progress","render-applied","command-accepted"].includes(message.type))
+              window.__playGate.messages.push({portId,type:message.type,op:message.op,time:performance.now()});
             if(window.__playGate.holding&&message.type==="command-accepted"&&message.op==="play"){
-              window.__playGate.held.push(()=>handler.call(port,event));return;
+              window.__playGate.heldPorts.push(portId);window.__playGate.held.push(()=>handler.call(port,event));return;
             }
             handler.call(port,event);
           });
@@ -340,6 +344,52 @@ test("Stop during a mode switch keeps the installed playback mode synchronized",
     await page.waitForFunction(()=>!document.querySelector('[data-mode="wet-buffer"]').disabled,{timeout:5000});
     assert.equal(await page.$eval('[data-mode="wet-buffer"]',button=>button.getAttribute("aria-pressed")),"true");
     assert.equal(await page.$eval("#scrub-axes",element=>element.hidden),false);
+    assert.deepEqual(app.errors,[]);
+  }finally{await closeApp(app);}
+});
+
+test("Stop cancels a pingpong route staged while Wet Buffer is playing",async()=>{
+  const app=await openApp();
+  try{
+    const {page}=app;
+    await prepare(page);
+    await page.click('[data-mode="wet-buffer"]');
+    await page.waitForFunction(()=>document.querySelector('[data-mode="wet-buffer"]').getAttribute("aria-pressed")==="true"&&
+      !document.querySelector("#play").disabled,{timeout:10000});
+    await page.select("#solo","wet");
+    await page.waitForFunction(()=>!document.querySelector("#solo").disabled,{timeout:10000});
+    await page.click("#play");
+    await page.waitForFunction(()=>Number(document.querySelector("#status").dataset.renderedFrames)>0,{timeout:10000});
+    await page.select("#wet-loop-style","pingpong");
+    await page.waitForFunction(()=>document.querySelector("#status").textContent.includes("wet の反復区間を適用"),{timeout:10000});
+    await page.evaluate(()=>{window.__playGate.holding=true;});
+    await page.$eval("#wet-repeat",field=>{field.checked=true;field.dispatchEvent(new Event("change",{bubbles:true}));});
+    await page.waitForFunction(()=>window.__playGate.held.length>0,{timeout:10000});
+    const candidatePort=await page.evaluate(()=>{
+      window.__playGate.recording=true;window.__playGate.messages=[];
+      return window.__playGate.heldPorts[0];
+    });
+    assert.ok(candidatePort,"the staged pingpong Worklet should have a tracked port");
+    const staged=await page.evaluate(()=>({held:window.__playGate.held.length,status:document.querySelector("#status").textContent,
+      wetRange:document.querySelector("#wet-range-applied").textContent}));
+    assert.ok(staged.held>0,"the pingpong candidate must be waiting for its play acknowledgement");
+
+    await page.click("#stop");
+    await page.waitForFunction(()=>document.querySelector("#status").textContent==="先頭",{timeout:5000});
+    await page.evaluate(()=>{window.__playGate.stoppedAt=performance.now();});
+    await page.evaluate(()=>{
+      window.__playGate.holding=false;
+      for(const release of window.__playGate.held.splice(0))release();
+    });
+    await page.waitForFunction(()=>!document.querySelector("#wet-repeat").disabled,{timeout:10000});
+    assert.match(await page.$eval("#wet-range-applied",field=>field.textContent),/^往復中:/,
+      "the staged pingpong route should finish applying after Stop");
+    await new Promise(resolve=>setTimeout(resolve,200));
+    const postStopProgress=await page.evaluate(portId=>window.__playGate.messages.filter(message=>
+      message.portId===portId&&message.type==="progress"&&message.time>=window.__playGate.stoppedAt).length,candidatePort);
+    assert.equal(postStopProgress,0,"the staged pingpong Worklet must stop producing after Stop completes");
+    const rms=await outputRMS(page);
+    assert.ok(rms<.005,`audio must remain stopped after the staged pingpong route resolves (RMS=${rms})`);
     assert.deepEqual(app.errors,[]);
   }finally{await closeApp(app);}
 });

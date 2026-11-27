@@ -46,7 +46,7 @@ export async function createScrubPair({ctx,dry,wet,mode,mix,solo,calibration="na
   let closed=false,running=false,connected=false;
   let wetCalibration=validateCalibration(calibration),calibrationFrame=null,calibrationScale=1;
   const localLevel=createLocalRMSCalibration(wet.channels,Math.max(1,Math.round(.05*sr)));
-  const tracks={},routes=new Set(),nodes=[],gains=scrubGains(mix,solo);
+  const tracks={},routes=new Set(),stagedRoutes=new Set(),nodes=[],gains=scrubGains(mix,solo);
   const state=()=>Object.fromEntries(Object.entries(tracks).map(([k,t])=>[k,{
     frame:t.config.speed===0?t.anchor:t.frame,speed:t.config.speed,repeat:t.config.repeat,
     rangeStartFrame:t.config.rangeStartFrame,rangeEndFrame:t.config.rangeEndFrame,
@@ -153,6 +153,7 @@ export async function createScrubPair({ctx,dry,wet,mode,mix,solo,calibration="na
       let candidate;
       try{
         candidate=await prepareRoute(t,next,source);
+        stagedRoutes.add(candidate);
         if(!Object.hasOwn(config,"frame")){
           next.frame=Math.min(length,Math.max(0,Math.round(state()[name].frame)));
           next.returning=t.returning;source=axisSource(t.signal,next,t.processingMode);plan=source.plan;
@@ -175,6 +176,7 @@ export async function createScrubPair({ctx,dry,wet,mode,mix,solo,calibration="na
         }else candidate.node.gain.value=1;
         release(old);report({type:"axis-accepted",axis:name});return {sourceFrame:t.frame};
       }catch(error){if(candidate&&candidate!==t.route)release(candidate);throw error;}
+      finally{if(candidate)stagedRoutes.delete(candidate);}
     }
     let receipt;
     if(old.reader){
@@ -197,8 +199,12 @@ export async function createScrubPair({ctx,dry,wet,mode,mix,solo,calibration="na
   return {
     connect(destination){for(const t of Object.values(tracks))(t.level??t.gain).connect(destination);connected=true;},
     async play(){await Promise.all(Object.values(tracks).map(t=>t.route.bridge.play()));running=true;report({type:"pair-accepted"});},
-    async pause(){const receipts=await Promise.all(Object.values(tracks).map(t=>t.route.bridge.pause()));
-      Object.values(tracks).forEach((t,i)=>updateFrame(t,t.route,receipts[i].sourceFrame));running=false;
+    async pause(){const active=Object.values(tracks),staged=[...stagedRoutes].filter(route=>routes.has(route));
+      const receipts=await Promise.all([
+        ...active.map(t=>t.route.bridge.pause()),
+        ...staged.map(route=>route.bridge.pause().catch(error=>{if(routes.has(route))throw error;return null;}))
+      ]);
+      active.forEach((t,i)=>updateFrame(t,t.route,receipts[i].sourceFrame));running=false;
       report({type:"pair-accepted"});return {sourceFrame:state().source.frame};},
     async seek(frame){await Promise.all(["source","wet"].map(name=>configure(name,{frame})));return {sourceFrame:state().source.frame};},
     configure,dispose,get axes(){return state();},get calibration(){return calibrationState();},

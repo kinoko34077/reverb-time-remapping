@@ -71,6 +71,14 @@ test("IR Spectral actual UI renders kernels in a Worker, retains output and appl
     assert.match(await page.$eval("#ir-spectral-applied",el=>el.textContent),/2.000 ms \/ 0×/);
     await page.$eval("#ir-spectral-start",el=>{el.value="0";el.dispatchEvent(new Event("change"));});
     await page.waitForFunction(()=>document.querySelector("#ir-spectral-applied").textContent.includes("0.000 ms / 0×")&&!document.querySelector("#play").disabled);
+    const originalMax=Number(await page.$eval("#seek",el=>el.max));
+    await page.$eval("#ir-spectral-length",el=>{el.value="200";el.dispatchEvent(new Event("change"));});
+    await page.waitForFunction(()=>document.querySelector("#ir-spectral-applied").textContent.includes("200.000 ms")&&!document.querySelector("#play").disabled);
+    assert.equal(Number(await page.$eval("#seek",el=>el.max)),originalMax+4800);
+    await audible();
+    await page.$eval("#ir-spectral-length",el=>{el.value="100";el.dispatchEvent(new Event("change"));});
+    await page.waitForFunction(()=>document.querySelector("#ir-spectral-applied").textContent.includes("100.000 ms")&&!document.querySelector("#play").disabled);
+    assert.equal(Number(await page.$eval("#seek",el=>el.max)),originalMax+4800);
     await page.click("#pause");await enabled();
     await page.click('[data-mode="normal"]');await enabled();await page.click('[data-mode="ir-spectral"]');await enabled();
     assert.match(await page.$eval("#ir-spectral-applied",el=>el.textContent),/0.000 ms \/ 0×/);

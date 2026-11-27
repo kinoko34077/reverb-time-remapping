@@ -1,3 +1,4 @@
+import {DEFAULT_PCM_BUDGET_BYTES,checkPCMBudget,validatePCM} from "./convolution.mjs";
 import {openWavChunkSource} from "../shared/fw/wav-chunk-source.mjs";
 
 // Deterministic, locally generated comparison fixtures; no external recordings.
@@ -54,12 +55,12 @@ export function makeIR(kind="dense",{sampleRate=SAMPLE_RATE,seconds=1.5}={}){
   }
   return {sampleRate,origin:0,channels:[a,b]};
 }
-export async function readLocalWav(file,{sampleRate=SAMPLE_RATE,maxBytes=8*1024*1024,signal}={}){
+export async function readLocalWav(file,{sampleRate=SAMPLE_RATE,maxBytes=DEFAULT_PCM_BUDGET_BYTES,signal}={}){
   const source=await openWavChunkSource(file,{signal});
   const meta=source.info;
   if(meta.channels>2||meta.frames<1)throw RangeError("モノラルまたはステレオの空でないWAVが必要です");
   const outFrames=Math.max(1,Math.round(meta.frames*sampleRate/meta.sampleRate));
-  if(4*meta.channels*(meta.frames+outFrames*2)>maxBytes)throw RangeError("有限比較用PCM予算を超えています");
+  checkPCMBudget(4*meta.channels*(meta.sampleRate===sampleRate?meta.frames:2*meta.frames+2*outFrames),maxBytes);
   const channels=Array.from({length:meta.channels},()=>new Float32Array(meta.frames));
   for await(const part of source.iterateFrames({signal}))
     for(let c=0;c<channels.length;c++)channels[c].set(part.channels[c],part.start);
@@ -73,4 +74,32 @@ export async function readLocalWav(file,{sampleRate=SAMPLE_RATE,maxBytes=8*1024*
   const output=await ctx.startRendering();
   if(signal?.aborted)throw Error("読込中断");
   return {sampleRate,origin:0,originalSampleRate:meta.sampleRate,channels:Array.from({length:meta.channels},(_,i)=>Float32Array.from(output.getChannelData(i)))};
+}
+
+// Uncompressed WAV keeps the shared bounded reader; compressed formats use
+// the browser's native decoder, as in the comparison prototype.
+export async function readLocalAudio(file,{sampleRate=SAMPLE_RATE,maxBytes=DEFAULT_PCM_BUDGET_BYTES,signal,Context=globalThis.OfflineAudioContext}={}){
+  if(!file||!Number.isSafeInteger(file.size)||file.size<1)throw RangeError("空の音声ファイル");
+  if(signal?.aborted)throw Error("読込中断");
+  const header=new Uint8Array(await file.slice(0,12).arrayBuffer());
+  const tag=(offset)=>String.fromCharCode(...header.subarray(offset,offset+4));
+  if(signal?.aborted)throw Error("読込中断");
+  if((tag(0)==="RIFF"&&tag(8)==="WAVE")||/\.wav$/i.test(file.name??"")||file.type==="audio/wav")
+    return readLocalWav(file,{sampleRate,maxBytes,signal});
+  checkPCMBudget(file.size,maxBytes);
+  if(typeof Context!=="function")throw Error("ブラウザの音声デコーダが利用できません");
+  const bytes=await file.arrayBuffer();
+  if(signal?.aborted)throw Error("読込中断");
+  const ctx=new Context(1,1,sampleRate);
+  let decoded;
+  try{decoded=await ctx.decodeAudioData(bytes);}
+  catch{throw Error("音声をデコードできません（形式非対応またはファイル破損）");}
+  if(signal?.aborted)throw Error("読込中断");
+  if(![1,2].includes(decoded.numberOfChannels)||decoded.length<1)throw RangeError("モノラルまたはステレオの空でない音声が必要です");
+  // Native decoder allocations happen before the decoded size is known.
+  // This bounds retained/copy PCM, not the browser's internal allocations.
+  checkPCMBudget(file.size+8*decoded.numberOfChannels*decoded.length,maxBytes);
+  const result={sampleRate:decoded.sampleRate,origin:0,channels:Array.from({length:decoded.numberOfChannels},(_,i)=>Float32Array.from(decoded.getChannelData(i)))};
+  validatePCM(result);
+  return result;
 }

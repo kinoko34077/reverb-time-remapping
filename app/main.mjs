@@ -1,4 +1,4 @@
-import {makeSource,makeIR,readLocalWav} from "../src/materials.mjs";
+import {makeSource,makeIR,readLocalAudio} from "../src/materials.mjs";
 import {prepareComparison} from "../src/comparison-session.mjs";
 import {createPreviewPlayer} from "../src/preview-player.mjs";
 import {createIRSpectralWorker} from "../src/ir-spectral-worker.mjs";
@@ -201,7 +201,7 @@ $("prepare").onclick=()=>run(async()=>{
 for(const [id,select,set] of [["source-file","source",v=>sourceFile=v],["ir-file","ir",v=>irFile=v]]){
   $(id).onchange=()=>run(async()=>{
     const file=$(id).files?.[0];if(!file)return;
-    try{const data=await readLocalWav(file);set(data);const opt=$(select).querySelector('[value="file"]');opt.disabled=false;$(select).value="file";message(file.name+" 読込済み。比較音を準備してください。");}
+    try{const data=await readLocalAudio(file);set(data);const opt=$(select).querySelector('[value="file"]');opt.disabled=false;$(select).value="file";message(file.name+" 読込済み（"+data.channels.length+"ch / "+data.sampleRate+"Hz / "+(data.channels[0].length/data.sampleRate).toFixed(3)+"秒）。比較音を準備してください。");}
     finally{$(id).value="";}
   });
 }

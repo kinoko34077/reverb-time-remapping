@@ -27,10 +27,10 @@ export function createPreviewPlayer(ctx,{onState=()=>{}}={}){
         if(current!==next)return;
         if(event.type==="progress"||event.type==="render-applied"||event.type==="axis-accepted"||event.type==="pair-accepted"){
           position=event.sourceFrame;running=event.running&&!event.ended;
-          report({event,axes:event.axes});
+          report({event,axes:event.axes,calibration:event.calibration});
         }else if(event.type==="fatal-error"){if(!event.axis)running=false;report({error:event.message,event});}
       };
-      next=scrub?await createScrubPair({ctx,dry:signal,wet:scrub.wet,mode:scrub.mode,mix:scrub.mix,solo:scrub.solo,onEvent,
+      next=scrub?await createScrubPair({ctx,dry:signal,wet:scrub.wet,mode:scrub.mode,mix:scrub.mix,solo:scrub.solo,calibration:scrub.calibration,onEvent,
         positions:{source:{frame:initial,...positions.source},wet:{frame:initial,...positions.wet}}}):
         await createSourcePCMBridge({ctx,sourceChannels:signal.channels,sourceSampleRate:signal.sampleRate,startFrame:initial,processingMode:"raw",onEvent});
       if(stale())return abandon();
@@ -86,11 +86,12 @@ export function createPreviewPlayer(ctx,{onState=()=>{}}={}){
   async function pause(){ensure();if(!current)return;const receipt=await current.pause();position=receipt.sourceFrame;running=false;report({phase:"accepted"});}
   async function seek(frame){ensure();if(!current)return;const receipt=await current.seek(Math.round(frame));if(!receipt.stale){position=receipt.sourceFrame;report({phase:"accepted"});}}
   async function configureAxis(name,config){ensure();if(!current?.configure)throw Error("この方式は独立軸を使用しません");return current.configure(name,config);}
+  function setCalibration(mode){if(!current?.setCalibration)return false;return current.setCalibration(mode);}
   function setMix(mix,solo){if(!current?.setMix)return false;current.setMix(mix,solo);return true;}
   function dispose(){
     if(disposed)return;disposed=true;++revision;release(current,route);current=null;route=null;
     for(const prior of retiring)release(prior.bridge,prior.node);retiring.clear();
     gain.disconnect();ceiling.disconnect();
   }
-  return {load,play,pause,seek,configureAxis,setMix,dispose,get state(){return {position,running,axes:current?.axes};}};
+  return {load,play,pause,seek,configureAxis,setMix,setCalibration,dispose,get state(){return {position,running,axes:current?.axes,calibration:current?.calibration};}};
 }

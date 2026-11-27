@@ -47,7 +47,7 @@ test("real Wet Buffer/PV Worklets keep independent axes and non-DC freeze output
     });
     const layout=await page.evaluate(()=>{
       const width=document.documentElement.clientWidth;
-      return {width,scroll:document.documentElement.scrollWidth,viewport:innerWidth,overflow:[...document.querySelectorAll("body *")].filter(e=>e.getBoundingClientRect().right>width+.5).map(e=>({tag:e.tagName,id:e.id,cls:e.className,x:e.getBoundingClientRect().x,w:e.getBoundingClientRect().width,right:e.getBoundingClientRect().right,scroll:e.scrollWidth,client:e.clientWidth})).slice(0,25)};
+      return {width,scroll:document.documentElement.scrollWidth,viewport:innerWidth,overflow:[...document.querySelectorAll("body,body *")].filter(e=>e.getBoundingClientRect().right>width+.5||e.scrollWidth>e.clientWidth+1).map(e=>({tag:e.tagName,id:e.id,cls:e.className,x:e.getBoundingClientRect().x,w:e.getBoundingClientRect().width,right:e.getBoundingClientRect().right,scroll:e.scrollWidth,client:e.clientWidth,overflow:getComputedStyle(e).overflowX})).slice(0,35)};
     });
     assert.ok(layout.scroll<=layout.width+1,JSON.stringify(layout));
     await page.click("#play");

@@ -22,3 +22,10 @@
    mobile CSS viewport. No overflow clipping of controls. */
 main,section,.fields,.wave-editor-toolbar{min-width:0}
 .audition .note{overflow-wrap:anywhere}
+
+/* Constrain intrinsic label tracks; long status/filename text must wrap,
+   not enlarge the mobile layout viewport. Native ranges use their full
+   available track, without the UA's extra horizontal margins. */
+body{overflow-wrap:anywhere;-webkit-text-size-adjust:100%;text-size-adjust:100%}
+label{grid-template-columns:minmax(0,1fr)}
+input[type=range]{margin-inline:0;min-inline-size:0}

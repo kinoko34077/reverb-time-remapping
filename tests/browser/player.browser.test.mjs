@@ -56,6 +56,28 @@ test("regular entry prepares audio, switches comparison, seeks and retains last 
     await page.waitForFunction(()=>document.querySelector("#status").textContent.includes("処理できません")&&!document.querySelector("#play").disabled);
     assert.equal(await page.$eval("#source",el=>el.value),"sine");
     assert.equal(await page.$eval('[data-mode="reverse"]',el=>el.getAttribute("aria-pressed")),"true");
+    // Actual local input, different source rate; the app must not silently
+    // keep the old synthetic material or use a placeholder waveform.
+    await page.evaluate(()=>{
+      const rate=44100,n=rate/5,bytes=new ArrayBuffer(44+n*2),v=new DataView(bytes);
+      const tag=(p,s)=>{for(let i=0;i<s.length;i++)v.setUint8(p+i,s.charCodeAt(i));};
+      tag(0,"RIFF");v.setUint32(4,36+n*2,true);tag(8,"WAVE");tag(12,"fmt ");
+      v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
+      v.setUint32(24,rate,true);v.setUint32(28,rate*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);
+      tag(36,"data");v.setUint32(40,n*2,true);
+      for(let i=0;i<n;i++)v.setInt16(44+i*2,Math.round(12000*Math.sin(2*Math.PI*220*i/rate)),true);
+      const data=new DataTransfer();data.items.add(new File([bytes],"local-44100.wav",{type:"audio/wav"}));
+      const input=document.querySelector("#source-file");input.files=data.files;input.dispatchEvent(new Event("change"));
+    });
+    await page.waitForFunction(()=>document.querySelector("#source").value==="file"&&!document.querySelector("#prepare").disabled);
+    await page.$eval("#predelay",el=>el.value="-20");
+    await page.click("#prepare");
+    await page.waitForFunction(()=>document.querySelector("#status").textContent.includes("準備済み")&&!document.querySelector("#play").disabled);
+    // Source length 0.2s at 48k, IR length 1.5s; common span accounts for
+    // both normal/reverse Wet and negative signed delay.
+    const max=await page.$eval("#seek",el=>Number(el.max));
+    assert.equal(max,153598);
+    assert.ok(Number.parseFloat(await page.$eval("#time",el=>el.textContent))<0);
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
     await page.setViewport({width:1280,height:800});
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));

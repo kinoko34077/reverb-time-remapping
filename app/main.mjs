@@ -62,7 +62,7 @@ for(const [id,select,set] of [["source-file","source",v=>sourceFile=v],["ir-file
 for(const button of document.querySelectorAll("[data-mode]"))button.onclick=()=>run(()=>choose(button.dataset.mode));
 $("solo").onchange=()=>run(()=>choose(mode));
 $("apply-mix").onclick=()=>run(()=>choose(mode));
-$("play").onclick=()=>run(async()=>{await audio();if(player.state.position>=session.length)await player.seek(0);await player.play();message("再生要求を適用");});
+$("play").onclick=()=>run(async()=>{await audio();if(player.state.position>=session.length)await player.seek(0);await player.play();message("再生要求を受理");});
 $("pause").onclick=()=>run(async()=>{await player.pause();message("一時停止");});
 $("stop").onclick=()=>run(async()=>{await player.pause();await player.seek(0);show(0);message("先頭");});
 seek.addEventListener("input",()=>{seeking=true;show(Number(seek.value));});

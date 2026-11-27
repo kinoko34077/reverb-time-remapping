@@ -173,7 +173,11 @@ for(const name of ["source","wet"]){
       rangeStartFrame:toFrame(name+"-range-start"),rangeEndFrame:toFrame(name+"-range-end")});
     showAxes(player.state.axes);message(name+" の反復区間を適用");
   });
-  repeat.onchange=applyRange;
+  // Disabling repeat must not depend on the validity of the edited draft.
+  repeat.onchange=()=>repeat.checked?applyRange():run(async()=>{
+    await player.configureAxis(name,{repeat:false});
+    showAxes(player.state.axes);message(name+" の反復を解除");
+  });
   $(name+"-range-start").onchange=applyRange;$(name+"-range-end").onchange=applyRange;
 }
 $("ir-window-scrub").oninput=()=>{$("ir-window-start").value=$("ir-window-scrub").value;requestWindow();};

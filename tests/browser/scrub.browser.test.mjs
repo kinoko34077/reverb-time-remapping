@@ -105,7 +105,12 @@ test("real Wet Buffer/PV Worklets keep independent axes and non-DC freeze output
     await field("wet-range-end",offset+23000/48000);
     assert.match(await page.$eval("#status",el=>el.textContent),/反復区間/);
     assert.equal(await page.$eval("#wet-range-applied",el=>el.textContent),applied);
+    // The user must be able to escape an active loop with an invalid draft.
+    await page.$eval("#wet-repeat",el=>{el.checked=false;el.dispatchEvent(new Event("change"));});await enabled();
+    assert.match(await page.$eval("#wet-range-applied",el=>el.textContent),/^反復範囲:/);
+    assert.equal(Number(await page.$eval("#wet-range-end",el=>el.value)),offset+23000/48000);
     await field("wet-range-end",offset+30000/48000);
+    await page.$eval("#wet-repeat",el=>{el.checked=true;el.dispatchEvent(new Event("change"));});await enabled();
     await choose("wet-spectral");
     assert.equal(await page.$eval("#wet-range-applied",el=>el.textContent),applied);
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));

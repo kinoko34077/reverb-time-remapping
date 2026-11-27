@@ -8,7 +8,8 @@ export function createPreviewPlayer(ctx,{onState=()=>{}}={}){
   const gain=ctx.createGain();gain.gain.value=1;
   const ceiling=ctx.createWaveShaper();
   ceiling.curve=Float32Array.from({length:2049},(_,i)=>Math.max(-.9,Math.min(.9,i/1024-1)));
-  gain.connect(ceiling);ceiling.connect(ctx.destination);
+  const volume=ctx.createGain();volume.gain.value=1;
+  gain.connect(volume);volume.connect(ceiling);ceiling.connect(ctx.destination);
   const report=(extra={})=>onState({position,running,...extra});
   function ensure(){if(disposed)throw Error("再生機構は終了済みです");}
   function release(bridge,node){bridge?.dispose();node?.disconnect();}
@@ -88,10 +89,14 @@ export function createPreviewPlayer(ctx,{onState=()=>{}}={}){
   async function configureAxis(name,config){ensure();if(!current?.configure)throw Error("この方式は独立軸を使用しません");return current.configure(name,config);}
   function setCalibration(mode){if(!current?.setCalibration)return false;return current.setCalibration(mode);}
   function setMix(mix,solo){if(!current?.setMix)return false;current.setMix(mix,solo);return true;}
+  function setVolume(value){
+    if(!Number.isFinite(value)||value<0||value>1)throw RangeError("出力音量は0–100%です");
+    volume.gain.setTargetAtTime(value,ctx.currentTime,.005);
+  }
   function dispose(){
     if(disposed)return;disposed=true;++revision;release(current,route);current=null;route=null;
     for(const prior of retiring)release(prior.bridge,prior.node);retiring.clear();
-    gain.disconnect();ceiling.disconnect();
+    gain.disconnect();volume.disconnect();ceiling.disconnect();
   }
-  return {load,play,pause,seek,configureAxis,setMix,setCalibration,dispose,get state(){return {position,running,axes:current?.axes,calibration:current?.calibration};}};
+  return {load,play,pause,seek,configureAxis,setMix,setCalibration,setVolume,dispose,get state(){return {position,running,axes:current?.axes,calibration:current?.calibration};}};
 }

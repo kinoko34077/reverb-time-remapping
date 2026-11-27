@@ -8,3 +8,6 @@
 
 ## R3a 部分IR比較
 IR Windowは指定したage区間を無正規化で切り出し、区間先頭をage=0へ移して既存入力と畳み込む。Predelayは共通。終端超過は残存範囲で切り、実適用範囲を表示。範囲外の開始はエラーにしlast-good比較を維持。比較全体の時間座標と安全ゲインに含める。現段階は明示再準備の有限比較で、連続スクラブ、クロスフェード・Wet時間操作・既発生残響の巻戻しは未受入。
+
+## R3b1 Wet独立再生
+Wet Bufferは通常Wetの有限キャッシュをATF raw Workletで直接走査、Wet Spectralは同一キャッシュをATF peak-locked PV Workletで再合成。Source/Dryは別Workletで独立参照する。速度0のrawは参照アンカー周辺50msの局所ループ、PVは速度0で位相継続。50msは初期比較値でありユーザー固定値ではない。反復は比較区間全体。時刻表示は共通符号付き座標。Source変更はキャッシュ済みWetの再畳み込みではない。PVピーク変動は共通安全gain後のpreview-only ceilingで制限し、線形基準DSPとは分離。独立起動のサンプル同期、任意A/B範囲・pingpong、連続IR窓更新、聴感・実機は後続受入。

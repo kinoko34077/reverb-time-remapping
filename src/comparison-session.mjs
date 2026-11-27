@@ -1,6 +1,6 @@
 import {renderConvolution,comparisonInterval,alignPCM,mixAligned,previewGain,secondsToFrames,DEFAULT_PCM_BUDGET_BYTES} from "./convolution.mjs";
 import {extractIRWindow} from "./ir-window.mjs";
-export const MODES=["dry","normal","reverse","ir-window"];
+export const MODES=["dry","normal","reverse","ir-window","wet-buffer","wet-spectral"];
 export async function prepareComparison(input,ir,{predelay=0,maxBytes=DEFAULT_PCM_BUDGET_BYTES,renderMono,irWindow}={}){
   const delay=secondsToFrames(predelay,input.sampleRate);
   const interval=comparisonInterval(input,ir,delay),count=Math.max(input.channels.length,ir.channels.length);
@@ -20,6 +20,7 @@ export async function prepareComparison(input,ir,{predelay=0,maxBytes=DEFAULT_PC
   return Object.freeze({signals,interval,sampleRate:input.sampleRate,length,gain,irWindow:kernel.range,
     select(mode,wet=.5,solo="mix"){
       if(!MODES.includes(mode)||!["mix","dry","wet"].includes(solo))throw RangeError("未知の比較方式");
+      if(mode==="wet-buffer"||mode==="wet-spectral")throw Error("独立Wet再生経路が必要です");
       if(mode==="dry"||solo==="dry")return dry;
       if(solo==="wet")return signals[mode];
       return mixAligned(dry,signals[mode],wet,{maxBytes});

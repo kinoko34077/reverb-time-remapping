@@ -43,7 +43,7 @@ function showSpectral(next,{reset=false,latest=true}={}){
   const s=next.irSpectral,ms=frame=>frame*1000/next.sampleRate;
   if(reset){
     for(const id of ["ir-spectral-start","ir-spectral-scrub"])$(id).max=String(ms(next.irFrames-1));
-    for(const id of ["ir-spectral-length","ir-spectral-range-end"])$(id).max=String(ms(next.irFrames));
+    $("ir-spectral-range-end").max=String(ms(next.irFrames));
     $("ir-spectral-range-start").max=String(ms(next.irFrames-1));
     $("ir-spectral-start").value=String(ms(s.startFrame));$("ir-spectral-scrub").value=String(ms(s.startFrame));
     $("ir-spectral-speed").value=String(s.speed);$("ir-spectral-length").value=String(ms(s.outputFrames));
@@ -60,7 +60,7 @@ function requestWindow(kind="ir-window"){
   if(!session||mode!==kind)return;
   try{
     const settings=kind==="ir-spectral"?readSpectral():readWindow();
-    queuedWindow={revision:++windowRevision,base:session,settings,mode:kind};
+    queuedWindow={revision:++windowRevision,settings,mode:kind};
     if(kind==="ir-window")$("window-request").textContent=(settings.start*1000).toFixed(3)+" ms（要求）";
     else $("ir-spectral-request").textContent="計算要求: "+$("ir-spectral-start").value+" ms / "+settings.speed+"×";
     message((kind==="ir-spectral"?"IR再合成":"IR窓")+"を計算中…（旧音を維持）");
@@ -72,9 +72,10 @@ function pumpWindow(){
   const job=queuedWindow;queuedWindow=null;
   windowWork=(async()=>{
     try{
+      const base=session;
       const next=job.mode==="ir-spectral"?
-        await job.base.withIRSpectral(job.settings,spectralWorker.render):
-        await job.base.withIRWindow(job.settings);
+        await base.withIRSpectral(job.settings,spectralWorker.render):
+        await base.withIRWindow(job.settings);
       if(job.revision!==windowRevision||mode!==job.mode)return;
       if(busy){if(!queuedWindow)queuedWindow=job;return;}
       windowApplying=true;
@@ -83,7 +84,8 @@ function pumpWindow(){
           if(job.revision!==windowRevision||mode!==job.mode)return;
           const accepted=await player.load(next.select(mode,binding.value,$("solo").value),next.gain.applied,{crossfade:true});
           if(!accepted)return;
-          session=next;showWindow(next,{latest:job.mode==="ir-window"&&job.revision===windowRevision});
+          session=next;syncComparisonRange(next);
+          showWindow(next,{latest:job.mode==="ir-window"&&job.revision===windowRevision});
           showSpectral(next,{latest:job.mode==="ir-spectral"&&job.revision===windowRevision});show(player.state.position);
           if(job.revision===windowRevision)message(job.mode==="ir-spectral"?"IR再合成を適用":"IR窓を適用: "+next.irCalibration);
         });
@@ -125,6 +127,19 @@ function controls(){
   $("wet-calibration").disabled=busy||!session||!isScrubMode(appliedMode);
   for(const name of ["source","wet"])for(const suffix of ["seek","speed","repeat","range-start","range-end","loop-style"])
     $(name+"-"+suffix).disabled=busy||!session||!isScrubMode(appliedMode);
+}
+function syncComparisonRange(next,{reset=false}={}){
+  seek.max=String(next.length);
+  const a=next.interval.start/next.sampleRate,b=next.interval.end/next.sampleRate;
+  for(const name of ["source","wet"]){
+    $(name+"-seek").max=String(next.length-1);
+    for(const suffix of ["range-start","range-end"]){
+      $(name+"-"+suffix).min=String(a);$(name+"-"+suffix).max=String(b);
+    }
+    if(reset||!savedAxes[name]){
+      $(name+"-range-start").value=String(a);$(name+"-range-end").value=String(b);
+    }
+  }
 }
 function show(frame){
   if(!session)return;
@@ -175,14 +190,9 @@ $("prepare").onclick=()=>run(async()=>{
   if(!source||!ir)throw Error("素材を選択してください");
   const next=await prepareComparison(source,ir,{predelay:readNumber("predelay")/1000,irWindow:readWindow()});
   await loadMode(next,mode,{frame:0,resume:false,reset:true});
-  session=next;savedAxes={};seek.max=String(next.length);show(0);
+  session=next;savedAxes={};syncComparisonRange(next,{reset:true});show(0);
   for(const name of ["source","wet"]){
-    $(name+"-seek").max=String(next.length-1);$(name+"-speed").value="1";$(name+"-repeat").checked=false;$(name+"-loop-style").value="repeat";
-    const a=next.interval.start/next.sampleRate,b=(next.interval.start+next.length)/next.sampleRate;
-    for(const suffix of ["range-start","range-end"]){
-      $(name+"-"+suffix).min=String(a);$(name+"-"+suffix).max=String(b);
-    }
-    $(name+"-range-start").value=String(a);$(name+"-range-end").value=String(b);
+    $(name+"-speed").value="1";$(name+"-repeat").checked=false;$(name+"-loop-style").value="repeat";
   }
   showAxes(player.state.axes);showCalibration(player.state.calibration);
   showWindow(next);showSpectral(next,{reset:true});

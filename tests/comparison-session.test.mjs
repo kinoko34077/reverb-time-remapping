@@ -96,7 +96,33 @@ test("IR spectral session preserves the common interval and other caches, with e
   assert.equal(frozen.irSpectral.outputFrames,2);
   const window=await frozen.withIRWindow({start:1/sr,duration:1/sr});
   assert.equal(window.signals["ir-spectral"],frozen.signals["ir-spectral"]);
-  await assert.rejects(window.withIRSpectral({outputFrames:5}),/IR長以内/);
+  await assert.rejects(window.withIRSpectral({outputFrames:0}),/正の有限/);
   await assert.rejects(window.withIRSpectral({startFrame:5}),/trajectory/);
   assert.equal(c.irSpectral.startFrame,0);
+});
+
+test("longer spectral kernel extends right edge without recomputing other caches",async()=>{
+  const ir={sampleRate:sr,channels:[Float32Array.of(1,.5,.25,.125)]};
+  const input={sampleRate:sr,origin:0,channels:[Float32Array.of(1,2)]};
+  let calls=0;const renderMono=async(x,h)=>{calls++;return mono(x,h);};
+  const c=await prepareComparison(input,ir,{predelay:-1/sr,renderMono});
+  assert.equal(calls,3);
+  const longer=await c.withIRSpectral({outputFrames:12});
+  assert.equal(calls,4);
+  assert.equal(longer.interval.start,c.interval.start);
+  assert.equal(longer.interval.end,12);
+  for(const mode of ["dry","normal","reverse","ir-window"]){
+    const old=c.signals[mode].channels[0],next=longer.signals[mode].channels[0];
+    assert.deepEqual(next.subarray(0,old.length),old);
+    assert.ok(next.subarray(old.length).every(v=>v===0));
+  }
+  assert.equal(longer.signals["ir-spectral"].channels[0].length,longer.length);
+  const shortened=await longer.withIRSpectral({outputFrames:2});
+  assert.equal(shortened.interval,longer.interval);assert.equal(shortened.signals.normal,longer.signals.normal);
+  const w=await shortened.withIRWindow({start:0,duration:2/sr});
+  assert.equal(w.interval,longer.interval);assert.equal(w.signals["ir-spectral"],shortened.signals["ir-spectral"]);
+  let called=false;
+  await assert.rejects(w.withIRSpectral({outputFrames:1000000000},()=>{called=true;}),/PCM予算/);
+  assert.equal(called,false);
+  assert.equal(c.signals.normal.channels[0].length,c.length);
 });

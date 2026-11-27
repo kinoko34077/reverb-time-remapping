@@ -11,3 +11,6 @@ IR Windowは指定したage区間を無正規化で切り出し、区間先頭�
 
 ## R3b1 Wet独立再生
 Wet Bufferは通常Wetの有限キャッシュをATF raw Workletで直接走査、Wet Spectralは同一キャッシュをATF peak-locked PV Workletで再合成。Source/Dryは別Workletで独立参照する。速度0のrawは参照アンカー周辺50msの局所ループ、PVは速度0で位相継続。50msは初期比較値でありユーザー固定値ではない。反復は比較区間全体。時刻表示は共通符号付き座標。Source変更はキャッシュ済みWetの再畳み込みではない。PVピーク変動は共通安全gain後のpreview-only ceilingで制限し、線形基準DSPとは分離。独立起動のサンプル同期、任意A/B範囲・pingpong、連続IR窓更新、聴感・実機は後続受入。
+
+## R3b2a IR窓の有限更新と試聴切替
+準備済み素材に対し、指定窓だけを再畳み込みし、Dry/Normal/Reverseのキャッシュを保持する。連続要求は一計算ずつ最新優先。旧結果は新しい要求を上書きせず、失敗時はlast-goodを維持。IR Window再生中は新Workletの実render receiptを確認してから25msの出力crossfadeを行う。別Workletの開始は最新render clockから推定するためsample-exact同期・無瞬断の完全保証ではない。有限事前入力の再計算であり、現在入力へのリアルタイム時変畳み込みではない。自然減衰は無補正、RMS補正は全IR/選択窓のRMS比を全ch共通に適用（初期上限8倍、無音窓は無音）。安全ゲインは比較全体に適用し線形値とは分離。25ms/8倍は検証用暫定値。任意区間/往復・他モードの補正・IR Spectral・聴感/実機は残る。

@@ -2,7 +2,7 @@
 <html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Reverb Time Remapping</title><link rel="stylesheet" href="style.css"></head>
 <body><main>
-<header><h1>Reverb Time Remapping</h1><p>正規版・基準比較（R2b） <a href="../prototype/">Muse実験版</a></p></header>
+<header><h1>Reverb Time Remapping</h1><p>正規版・比較試聴（R3a） <a href="../prototype/">Muse実験版</a></p></header>
 <section aria-label="素材"><h2>音源 / IR</h2><div class="fields">
 <label>原音<select id="source"><option value="impulse">Impulse</option><option value="sine">Sine</option><option value="square">Square</option><option value="saw">Saw</option><option value="noise">Noise</option><option value="chord">Chord</option><option value="piano-like">Piano風（合成）</option><option value="drums-like">Drums風（合成）</option><option value="file" disabled>読込WAV</option></select></label>
 <label>原音WAV<input id="source-file" type="file" accept=".wav,audio/wav"></label>
@@ -11,15 +11,17 @@
 <label>発振周波数 (Hz)<input id="frequency" type="number" min="20" max="20000" step="any" value="440"></label>
 <label>IR長 (s)<input id="ir-length" type="number" min=".01" max="12" step="any" value="1.5"></label>
 <label>Predelay (ms・正負)<input id="predelay" type="number" step="any" value="0"></label>
+<label>IR窓の開始 (ms)<input id="ir-window-start" type="number" min="0" step="any" value="0"></label>
+<label>IR窓の長さ (ms)<input id="ir-window-length" type="number" min="0.01" step="any" value="100"></label>
 <button id="prepare" type="button">比較音を準備</button>
 </div></section>
 <section aria-label="比較試聴"><h2>比較試聴</h2><div class="modes" role="group" aria-label="方式">
-<button data-mode="dry" aria-pressed="true">Dry</button><button data-mode="normal" aria-pressed="false">Normal</button><button data-mode="reverse" aria-pressed="false">Reverse</button>
+<button data-mode="dry" aria-pressed="true">Dry</button><button data-mode="normal" aria-pressed="false">Normal</button><button data-mode="reverse" aria-pressed="false">Reverse</button><button data-mode="ir-window" aria-pressed="false">IR Window</button>
 </div><div class="fields">
 <label>Wet (%)<input id="wet" inputmode="decimal" type="text"></label>
 <label>試聴<select id="solo"><option value="mix">Dry + Wet</option><option value="dry">Dryのみ</option><option value="wet">Wetのみ</option></select></label><button id="apply-mix" disabled>Wet設定を反映</button>
 </div><div class="modes"><button id="play" disabled>再生</button><button id="pause" disabled>一時停止</button><button id="stop" disabled>先頭へ</button></div>
 <label>共通時間位置 <output id="time">—</output><input id="seek" type="range" min="0" max="1" step="1" value="0" disabled></label>
-<output id="gain">—</output><p id="status" role="status" aria-live="polite">比較音を準備してください。</p>
-<p class="note">有限キャッシュを使用。残響スクラブ・IR再合成は後続工程。切替には短い準備間隔があります。</p></section>
+<output id="gain">—</output><p><output id="window-range">IR窓: 未準備</output></p><p id="status" role="status" aria-live="polite">比較音を準備してください。</p>
+<p class="note">有限キャッシュを使用。IR Windowは選択区間を先頭へ移して畳み込む方式。IR窓の変更は比較音を再準備。発生済み残響の巻戻し・IR再合成は後続工程。切替には短い準備間隔があります。</p></section>
 </main><script type="module" src="main.mjs"></script></body></html>

@@ -42,3 +42,23 @@ test("local WAV reads original PCM with budget and invalid-file rejection",async
   await assert.rejects(readLocalWav(wav(),{maxBytes:4}),/予算/);
   await assert.rejects(readLocalWav(new Blob(["bad"])));
 });
+
+import {extractIRWindow} from "../src/ir-window.mjs";
+test("IR window keeps natural attenuation, stereo and signed placement",async()=>{
+  const ir={sampleRate:sr,origin:0,channels:[Float32Array.of(1,.5,.1,.05),Float32Array.of(-1,-.5,-.1,-.05)]};
+  const input={sampleRate:sr,origin:0,channels:[Float32Array.of(1)]};
+  const early=extractIRWindow(ir,{start:0,duration:2/sr});
+  const late=extractIRWindow(ir,{start:2/sr,duration:2/sr});
+  assert.deepEqual(Array.from(late.channels[0]),Array.from(ir.channels[0].slice(2)));
+  assert.ok(Math.abs(late.channels[0][0]/early.channels[0][0]-.1)<1e-7);
+  assert.equal(late.channels[1][0],-late.channels[0][0]);
+  const c=await prepareComparison(input,ir,{predelay:-1/sr,renderMono:mono,irWindow:{start:2/sr,duration:2/sr}});
+  const wet=c.select("ir-window",1,"wet"),offset=-1-c.interval.start;
+  assert.deepEqual(Array.from(wet.channels[0].slice(offset,offset+2)),Array.from(late.channels[0]));
+  assert.ok(wet.channels[0].slice(0,offset).every(v=>v===0));
+  assert.ok(wet.channels[0].slice(offset+2).every(v=>v===0));
+  assert.deepEqual(c.irWindow,{startFrame:2,endFrame:4,requestedFrames:2,truncated:false});
+  assert.equal(extractIRWindow(ir,{start:3/sr,duration:4/sr}).range.truncated,true);
+  assert.throws(()=>extractIRWindow(ir,{start:4/sr,duration:1/sr}),/範囲外/);
+  assert.throws(()=>extractIRWindow(ir,{start:-1/sr,duration:1/sr}),/不正/);
+});

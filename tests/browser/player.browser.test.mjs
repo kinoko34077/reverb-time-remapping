@@ -78,6 +78,25 @@ test("regular entry prepares audio, switches comparison, seeks and retains last 
     const max=await page.$eval("#seek",el=>Number(el.max));
     assert.equal(max,153598);
     assert.ok(Number.parseFloat(await page.$eval("#time",el=>el.textContent))<0);
+    await page.$eval("#ir-window-start",el=>el.value="500");
+    await page.$eval("#ir-window-length",el=>el.value="150");
+    await page.click("#prepare");
+    await page.waitForFunction(()=>document.querySelector("#window-range").textContent.includes("500.000 – 650.000")&&!document.querySelector("#play").disabled);
+    await page.click('[data-mode="ir-window"]');
+    await page.waitForFunction(()=>document.querySelector('[data-mode="ir-window"]').getAttribute("aria-pressed")==="true"&&!document.querySelector("#play").disabled);
+    const native=await page.evaluate(async()=>{
+      const {prepareComparison}=await import("/src/comparison-session.mjs");
+      const sr=48000,source={sampleRate:sr,channels:[Float32Array.of(1)]},ir={sampleRate:sr,channels:[Float32Array.of(1,.5,.1,.05),Float32Array.of(-1,-.5,-.1,-.05)]};
+      const c=await prepareComparison(source,ir,{predelay:-1/sr,irWindow:{start:2/sr,duration:2/sr}});
+      const at=-1-c.interval.start;
+      return {left:Array.from(c.signals["ir-window"].channels[0].slice(at,at+2)),right:Array.from(c.signals["ir-window"].channels[1].slice(at,at+2))};
+    });
+    assert.ok(Math.abs(native.left[0]-.1)<1e-6&&Math.abs(native.left[1]-.05)<1e-6);
+    assert.ok(Math.abs(native.right[0]+.1)<1e-6&&Math.abs(native.right[1]+.05)<1e-6);
+    await page.$eval("#ir-window-start",el=>el.value="2000");
+    await page.click("#prepare");
+    await page.waitForFunction(()=>document.querySelector("#status").textContent.includes("処理できません")&&!document.querySelector("#play").disabled);
+    assert.ok((await page.$eval("#window-range",el=>el.textContent)).includes("500.000 – 650.000"));
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
     await page.setViewport({width:1280,height:800});
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));

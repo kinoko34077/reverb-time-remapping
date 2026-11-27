@@ -74,7 +74,7 @@ test("regular entry prepares audio, switches comparison, seeks and retains last 
     await page.$eval("#seek",el=>{el.value="24000";el.dispatchEvent(new Event("input"));el.dispatchEvent(new Event("change"));});
     await page.waitForFunction(()=>!document.querySelector("#seek").disabled);
     const before=await page.$eval("#seek",el=>Number(el.value));
-    const waveState=await page.$eval("#wave-detail",el=>({span:Number(el.dataset.spanFrames),position:Number(el.getAttribute("aria-valuenow")),painted:(()=>{const p=el.getContext("2d").getImageData(0,0,el.width,el.height).data;for(let i=0;i<p.length;i+=4)if(p[i]===117&&p[i+1]===217&&p[i+2]===197)return true;return false;})()}));
+    const waveState=await page.$eval("#wave-detail",el=>({span:Number(el.dataset.spanFrames),position:Number(el.getAttribute("aria-valuenow")),painted:(()=>{const p=el.getContext("2d").getImageData(0,0,el.width,el.height).data;let pixels=0;for(let i=0;i<p.length;i+=4){const y=Math.floor(i/4/el.width);if(Math.abs(y-el.height/2)>el.height*.06&&p[i+1]>115&&p[i+1]-p[i]>35&&p[i+1]-p[i+2]>8)pixels++;}return pixels>10;})()}));
     assert.ok(waveState.painted&&waveState.span>0);
     await page.focus("#wave-detail");await page.keyboard.press("Home");
     await page.waitForFunction(()=>Number(document.querySelector("#wave-detail").getAttribute("aria-valuenow"))===0&&!document.querySelector("#seek").disabled);

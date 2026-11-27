@@ -36,7 +36,18 @@ test("regular entry prepares audio, switches comparison, seeks and retains last 
     await page.waitForFunction(()=>document.querySelector("#status").dataset.prepared==="true"&&!document.querySelector("#play").disabled);
     await page.click('[data-mode="normal"]');
     await page.waitForFunction(()=>document.querySelector('[data-mode="normal"]').getAttribute("aria-pressed")==="true"&&!document.querySelector("#play").disabled);
+    await page.evaluate(()=>{
+      window.__playClicks=[];
+      document.addEventListener("click",e=>window.__playClicks.push({id:e.target.id,tag:e.target.tagName,x:e.clientX,y:e.clientY}),true);
+    });
     await page.click("#play");
+    await new Promise(r=>setTimeout(r,300));
+    console.log("P1 playback click diagnostic",JSON.stringify(await page.evaluate(()=>{
+      const el=document.querySelector("#play"),r=el.getBoundingClientRect();
+      const hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);
+      return {clicks:window.__playClicks,status:document.querySelector("#status").textContent,frames:document.querySelector("#status").dataset.renderedFrames,disabled:el.disabled,
+        hit:hit?.id,rect:{x:r.x,y:r.y,w:r.width,h:r.height},scrollY,viewport:[innerWidth,innerHeight]};
+    })),errors);
     await page.waitForFunction(()=>Number(document.querySelector("#status").dataset.renderedFrames)>256);
     await page.waitForFunction(()=>{
       const tap=window.__observedOutput;if(!tap)return false;

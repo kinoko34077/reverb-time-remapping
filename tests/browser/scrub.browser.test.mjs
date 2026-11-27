@@ -41,7 +41,18 @@ test("real Wet Buffer/PV Worklets keep independent axes and non-DC freeze output
     await page.click("#prepare");await page.waitForFunction(()=>document.querySelector("#status").dataset.prepared==="true"&&!document.querySelector("#play").disabled);
     await choose("wet-buffer");await page.select("#solo","wet");await enabled();
     await field("source-seek",24000);await field("wet-seek",30000);await field("wet-speed",0);
-    await page.click("#play");await enabled();
+    await page.evaluate(()=>{
+      window.__playClicks=[];
+      document.addEventListener("click",e=>window.__playClicks.push({id:e.target.id,tag:e.target.tagName,x:e.clientX,y:e.clientY}),true);
+    });
+    await page.click("#play");
+    await new Promise(r=>setTimeout(r,300));
+    console.log("P1 playback click diagnostic",JSON.stringify(await page.evaluate(()=>{
+      const el=document.querySelector("#play"),r=el.getBoundingClientRect();
+      const hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);
+      return {clicks:window.__playClicks,status:document.querySelector("#status").textContent,frames:document.querySelector("#status").dataset.renderedFrames,disabled:el.disabled,
+        hit:hit?.id,rect:{x:r.x,y:r.y,w:r.width,h:r.height},scrollY,viewport:[innerWidth,innerHeight]};
+    })),errors);await enabled();
     await page.waitForFunction(()=>Number(document.querySelector("#source-seek").value)>26000);
     assert.equal(await pos("wet"),30000);await audible();
     await page.select("#wet-calibration","compensated");await enabled();

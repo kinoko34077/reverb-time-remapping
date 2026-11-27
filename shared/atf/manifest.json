@@ -41,6 +41,10 @@
     "progressive-source-cache.test.mjs": {
       "source": "web-demo/progressive-source-cache.test.mjs",
       "gitBlob": "e48533d5285129ec4cd2b0f99e781ba7a5c31211"
+    },
+    "test-process-cleanup.mjs": {
+      "source": "web-demo/test-process-cleanup.mjs",
+      "gitBlob": "b706f27d12076a3837919bc974818e7c465e0a83"
     }
   }
 }

@@ -87,6 +87,14 @@ test("three-minute stereo MP3 plays full-length progressive Reverse",async()=>{
     await page.waitForFunction(()=>document.querySelector('[data-mode="reverse"]').getAttribute("aria-pressed")==="true");
     const reverse=await page.evaluate(()=>Number.parseFloat(document.querySelector("#time").textContent));
     assert.ok(Math.abs(reverse-beforeReverse)<.5,JSON.stringify({beforeReverse,reverse}));
+    const beforeWetBuffer=reverse;
+    await page.click('[data-mode="wet-buffer"]');
+    await page.waitForFunction(()=>document.querySelector('[data-mode="wet-buffer"]').getAttribute("aria-pressed")==="true");
+    const wetBuffer=await page.evaluate(()=>({time:Number.parseFloat(document.querySelector("#time").textContent),
+      wave:document.querySelector("#source-wave-note").textContent}));
+    assert.ok(Math.abs(wetBuffer.time-beforeWetBuffer)<.5,JSON.stringify({beforeWetBuffer,wetBuffer}));
+    const wetWaveTime=Number(wetBuffer.wave.match(/比較時刻\s+(\d+\.\d{3}) s/)?.[1]);
+    assert.ok(Math.abs(wetWaveTime-wetBuffer.time)<.15,JSON.stringify({wetBuffer,wetWaveTime}));
     await page.click("#stop");
     await page.waitForFunction(()=>Number(document.querySelector("#seek").value)===0,{timeout:10000});
     assert.deepEqual(errors,[]);

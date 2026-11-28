@@ -326,8 +326,9 @@ mountWetMixField({field:$("wet"),binding,onChanged:scheduleWetApply});
 $("wet").addEventListener("blur",applyPendingWetEdit);
 async function loadMode(target,next,options={}){
   if(isScrubMode(next)){
+    const sourceFrame=options.frame!==undefined&&next!==appliedMode?options.frame:Math.round(player.state.position);
     const positions=options.reset?{}:{...savedAxes,
-      source:{...savedAxes.source,frame:Math.round(player.state.position)}};
+      source:{...savedAxes.source,frame:sourceFrame}};
     const mix=binding.value,solo=$("solo").value;
     const dry=target.progressive?await target.select("dry",mix,solo):target.signals.dry;
     const wet=target.progressive?await target.select("normal",mix,solo):target.signals.normal;

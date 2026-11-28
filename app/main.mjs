@@ -6,6 +6,7 @@ import {isScrubMode} from "../src/scrub-pair.mjs";
 import {secondsToFrames} from "../src/convolution.mjs";
 import {createWetMixBinding,mountWetMixField} from "../src/wet-mix.mjs";
 import {createSourceWaveView} from "./source-wave-view.mjs";
+import {createIRWaveView} from "./ir-wave-view.mjs";
 import {openProgressiveMaterial,estimatePreparedComparisonBytes,resamplePCM} from "../src/progressive-material.mjs";
 import {createProgressiveSession} from "../src/progressive-session.mjs";
 const $=id=>document.getElementById(id);
@@ -13,7 +14,7 @@ let ctx,player,session,mode="dry",appliedMode="dry",busy=false,seeking=false,sou
 let sourceFileRevision=0,preparationRevision=0,preparationWork=null,queuedPreparation=null;
 const fileReadRevision={source:0,ir:0};
 const nativeSourceCache=new WeakMap();
-let activeWaveSource=null,activeSourceReader=null;
+let activeWaveSource=null,activeSourceReader=null,activeIRSource=null,activeIRKey=null;
 let appliedSourceKey=null,appliedSourceType="impulse",stopRevision=0,wetApplyTimer=null;
 let explicitStopIntent=false,stopping=false;
 const status=$("status"),seek=$("seek");
@@ -28,6 +29,39 @@ const wave=createSourceWaveView({
     pendingWave={session,mode:appliedMode,edge,frame};pumpWave();
   }
 });
+const irWave=createIRWaveView({
+  getWindow:irWaveRange,
+  canEdit:()=>!!session&&(!busy||windowApplying)&&appliedMode==="ir-window",
+  onStart:seconds=>{
+    const rate=session?.irSampleRate??session?.ir?.sampleRate??48000;
+    const frames=session?.irFrames??session?.ir?.channels?.[0]?.length??0;
+    const length=Math.max(1,Math.round(Number($("ir-window-length").value||1)*rate/1000));
+    const start=Math.max(0,Math.min(Math.max(0,frames-length),Math.round(seconds*rate)));
+    $("ir-window-start").value=String(start*1000/rate);
+    requestWindow();
+  },
+  onEdge:(edge,frame)=>{
+    const rate=session?.irSampleRate??session?.ir?.sampleRate??48000;
+    const frames=session?.irFrames??session?.ir?.channels?.[0]?.length??0;
+    const range=irWaveRange();
+    if(edge==="a"){
+      const start=Math.max(0,Math.min(Math.max(0,frames-1),Math.min(frame,range.end-1)));
+      $("ir-window-start").value=String(start*1000/rate);
+      $("ir-window-length").value=String((range.end-start)*1000/rate);
+    }else if(edge==="b"){
+      const end=Math.max(range.start+1,Math.min(frames,frame));
+      $("ir-window-length").value=String((end-range.start)*1000/rate);
+    }
+    requestWindow();
+  }
+});
+function irWaveRange(){
+  const rate=session?.irSampleRate??session?.ir?.sampleRate??48000;
+  const frames=session?.irFrames??session?.ir?.channels?.[0]?.length??0;
+  const start=Math.max(0,Math.min(Math.max(0,frames-1),Math.round(Number($("ir-window-start").value||0)*rate/1000)));
+  const length=Math.max(1,Math.round(Number($("ir-window-length").value||1)*rate/1000));
+  return {start,end:Math.min(frames,start+length)};
+}
 function pumpWave(){
   if(busy||waveSeekWork||!pendingWave)return;
   const job=pendingWave;pendingWave=null;
@@ -70,6 +104,10 @@ function showWindow(next,{latest=true}={}){
   $("ir-window-scrub").max=String((next.irFrames-1)/irSampleRate*1000);
   $("ir-window-scrub").value=$("ir-window-start").value;
   if(latest)$("window-request").textContent=$("ir-window-start").value+" ms";
+  const selected=irWaveRange();
+  $("ir-wave-selection").textContent=(selected.start/irSampleRate*1000).toFixed(3)+" – "+
+    (selected.end/irSampleRate*1000).toFixed(3)+" ms";
+  irWave.refresh(true);
 }
 function readSpectral(){
   const frames=id=>secondsToFrames(readNumber(id)/1000,session.sampleRate);
@@ -112,6 +150,13 @@ function requestWindow(kind="ir-window"){
   try{
     const settings=kind==="ir-spectral"?readSpectral():readWindow();
     queuedWindow={revision:++windowRevision,settings,mode:kind};
+    if(kind==="ir-window"){
+      const range=irWaveRange(),rate=session.irSampleRate??session.ir?.sampleRate??
+        activeIRSource?.sampleRate??session.sampleRate;
+      $("ir-wave-selection").textContent=(range.start/rate*1000).toFixed(3)+" – "+
+        (range.end/rate*1000).toFixed(3)+" ms（要求）";
+      irWave.refresh(true);
+    }
     if(kind==="ir-window")$("window-request").textContent=(settings.start*1000).toFixed(3)+" ms（要求）";
     else $("ir-spectral-request").textContent="計算要求: "+$("ir-spectral-start").value+" ms / "+settings.speed+"×";
     message((kind==="ir-spectral"?"IR再合成":"IR窓")+"を計算中…（旧音を維持）");
@@ -261,7 +306,8 @@ function preparationJob(revision){
   if(!source||!ir)throw Error("素材を選択してください");
   const predelay=readNumber("predelay")/1000,irWindow=readWindow();
   return {revision,source,ir,predelay,irWindow,sourceType,
-    sourceKey:sourceType==="file"?"file:"+sourceFileRevision:`${sourceType}:${frequency}`};
+    sourceKey:sourceType==="file"?"file:"+sourceFileRevision:`${sourceType}:${frequency}`,
+    irKey:irType==="file"?"file:"+fileReadRevision.ir:`${irType}:${irLength}`};
 }
 function requestPreparation(){
   const revision=++preparationRevision;
@@ -361,6 +407,9 @@ async function applyPreparation(job,next){
     if(queuedWindow?.mode==="ir-spectral")queuedWindow={...queuedWindow,settings:readSpectral()};
     syncComparisonRange(next,{reset:true});show(player.state.position);
     if(waveSourceChanged)wave.setSource(job.waveSource,next);else wave.setInterval(next);
+    if(activeIRKey!==job.irKey){activeIRKey=job.irKey;irWave.setIR(job.ir);}
+    else irWave.refresh(true);
+    activeIRSource=job.ir;
     if(next.progressive&&job.source?.read)nativeSourceCache.delete(job.source);
     if(priorReader&&priorReader!==activeSourceReader){
       nativeSourceCache.delete(priorReader);
@@ -464,5 +513,5 @@ for(const id of spectralFields.filter(id=>id!=="ir-spectral-scrub"))$(id).onchan
   if(id==="ir-spectral-start")$("ir-spectral-scrub").value=$(id).value;
   requestWindow("ir-spectral");
 };
-window.addEventListener("pagehide",()=>{cancelWindowRequests();spectralWorker.dispose();wave.dispose();player?.dispose();void ctx?.close();},{once:true});
+window.addEventListener("pagehide",()=>{cancelWindowRequests();spectralWorker.dispose();wave.dispose();irWave.dispose();player?.dispose();void ctx?.close();},{once:true});
 controls();

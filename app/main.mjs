@@ -206,13 +206,13 @@ function showAxes(axes){
 }
 function showCalibration(value){
   if(!value)return;
-  $("wet-calibration-applied").textContent=value.mode==="compensated"?
+  $("wet-calibration-applied").textContent=!value.available?"長尺Wet: 自然減衰（補正なし）":value.mode==="compensated"?
     "Wet補正目標 ×"+value.targetScale.toFixed(3):"Wet自然減衰 ×1";
 }
 function message(s){status.textContent=s;}
 function controls(){
   for(const id of ["source","source-file","ir","ir-file","frequency","ir-length","predelay","ir-window-start","ir-window-length","ir-calibration","prepare","wet","solo"])$(id).disabled=busy;
-  for(const b of document.querySelectorAll("[data-mode]")){b.disabled=busy||!session||(session.progressive&&!['dry','normal','ir-window'].includes(b.dataset.mode));b.setAttribute("aria-pressed",String(b.dataset.mode===appliedMode));}
+  for(const b of document.querySelectorAll("[data-mode]")){b.disabled=busy||!session||(session.progressive&&!['dry','normal','ir-window','wet-buffer'].includes(b.dataset.mode));b.setAttribute("aria-pressed",String(b.dataset.mode===appliedMode));}
   $("play").disabled=busy||!session||stopping;
   for(const id of ["pause","seek"])$(id).disabled=busy||!session;
   $("stop").disabled=!session;
@@ -222,9 +222,10 @@ function controls(){
   $("ir-window-scrub").disabled=(busy&&!windowApplying)||!session||appliedMode!=="ir-window";
   if(windowApplying)for(const id of ["ir-window-start","ir-window-length","ir-calibration"])$(id).disabled=false;
   $("scrub-axes").hidden=!isScrubMode(appliedMode);
-  $("wet-calibration").disabled=busy||!session||!isScrubMode(appliedMode);
+  $("wet-calibration").disabled=busy||!session||!isScrubMode(appliedMode)||session.progressive;
   for(const name of ["source","wet"])for(const suffix of ["seek","speed","repeat","range-start","range-end","loop-style"])
-    $(name+"-"+suffix).disabled=busy||!session||!isScrubMode(appliedMode);
+    $(name+"-"+suffix).disabled=busy||!session||!isScrubMode(appliedMode)||
+      session.progressive&&suffix==="loop-style";
 }
 function syncComparisonRange(next,{reset=false}={}){
   seek.max=String(next.length);
@@ -283,8 +284,11 @@ async function loadMode(target,next,options={}){
   if(isScrubMode(next)){
     const positions=options.reset?{}:{...savedAxes,
       source:{...savedAxes.source,frame:Math.round(player.state.position)}};
-    return await player.load(target.signals.dry,target.gain.applied,{...options,
-      scrub:{wet:target.signals.normal,mode:next,mix:binding.value,solo:$("solo").value,calibration:$("wet-calibration").value},positions});
+    const mix=binding.value,solo=$("solo").value;
+    const dry=target.progressive?target.select("dry",mix,solo):target.signals.dry;
+    const wet=target.progressive?target.select("normal",mix,solo):target.signals.normal;
+    return await player.load(dry,target.gain.applied,{...options,
+      scrub:{wet,mode:next,mix,solo,calibration:$("wet-calibration").value},positions});
   }else return await player.load(target.select(next,binding.value,$("solo").value),target.gain.applied,options);
 }
 async function choose(next){
@@ -384,7 +388,7 @@ async function applyPreparation(job,next){
       next=next.withProcessingRate(ctx.sampleRate);
     const resume=wasRunning&&stopRevision===stopToken;
     let nextMode=mode,fallbackReason="";
-    if(next.progressive&&!['dry','normal','ir-window'].includes(nextMode)){
+    if(next.progressive&&!['dry','normal','ir-window','wet-buffer'].includes(nextMode)){
       nextMode=job.predelay<0?"dry":"normal";
       fallbackReason=`長尺音源では${mode}が未対応のため${nextMode==="dry"?"Dry":"Normal"}へ切替`;
     }
@@ -423,7 +427,7 @@ async function applyPreparation(job,next){
     showAxes(player.state.axes);showCalibration(player.state.calibration);
     showWindow(next);if(!next.progressive)showSpectral(next,{reset:true});
     message(fallbackReason?`準備済み: ${fallbackReason}。長尺逐次再生 / Dry・Normal・IR Window（他方式は未対応）`:
-      next.progressive?"準備済み: 長尺逐次再生 / Dry・Normal・IR Window（他方式は未対応）":"準備済み: "+mode);status.dataset.prepared="true";
+      next.progressive?"準備済み: 長尺逐次再生 / Dry・Normal・IR Window・Wet Buffer":"準備済み: "+mode);status.dataset.prepared="true";
   });
 }
 $("prepare").onclick=requestPreparation;

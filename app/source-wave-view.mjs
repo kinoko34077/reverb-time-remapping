@@ -5,7 +5,7 @@ export function createSourceWaveView({getFrame,getRange,onSeek,onRange}){
   const $=id=>document.getElementById(id);
   const canvas=$("wave-detail"),wrap=$("wave-detail-wrap");
   let source=null,interval=null,request=null,gesture=false,closed=false;
-  const length=()=>source?.channels[0].length??0;
+  const length=()=>source?.sourceFrames??source?.channels[0].length??0;
   const offset=()=>source&&interval?(source.origin??0)-interval.start:0;
   const local=frame=>Math.max(0,Math.min(length()-1,frame-offset()));
   const editor=createPlayerWaveEditor({canvas,wrap,overviewSelection:$("wave-overview-selection"),
@@ -35,7 +35,8 @@ export function createSourceWaveView({getFrame,getRange,onSeek,onRange}){
     $("source-wave-note").textContent="素材内時刻（0始点） / 比較時刻 "+((getFrame()+interval.start)/source.sampleRate).toFixed(3)+" s";
     editor.refresh(force);
   }
-  return {setSource(value,session){source=value;interval=session.interval;request=null;editor.setSource(value.channels,value.sampleRate);refresh(true);},
+  return {setSource(value,session){source=value;interval=session.interval;request=null;
+    editor.setSource(typeof value.read==="function"?value:value.channels,value.sampleRate);refresh(true);},
     setInterval(session){interval=session.interval;refresh(true);},refresh,
     dispose(){closed=true;resize.disconnect();editor.setSource(null,source?.sampleRate??48000);source=null;}};
 }

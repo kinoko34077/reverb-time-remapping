@@ -9,9 +9,13 @@ for(const [dir,owner] of [["atf","audio-time-frequency-lab"],["fw","frequency-wa
     const manifest=JSON.parse(await readFile(new URL("manifest.json",root),"utf8"));
     assert.equal(manifest.repository,"kinoko34077/"+owner);
     assert.match(manifest.commit,/^[a-f0-9]{40}$/);
-    assert.deepEqual((await readdir(root)).sort(),["manifest.json",...Object.keys(manifest.files)].sort());
+    const files=async(dir,prefix="")=>(await Promise.all((await readdir(dir,{withFileTypes:true})).map(async entry=>{
+      const name=prefix+entry.name;
+      return entry.isDirectory()?files(new URL(entry.name+"/",dir),name+"/"):[name];
+    }))).flat();
+    assert.deepEqual((await files(root)).sort(),["manifest.json",...Object.keys(manifest.files)].sort());
     for(const [file,meta] of Object.entries(manifest.files)){
-      assert.match(file,/^[a-z0-9.-]+$/);
+      assert.match(file,/^(?:[A-Za-z0-9_.-]+\/)*[A-Za-z0-9_.-]+$/);
       assert.equal(meta.source,"web-demo/"+file);
       assert.match(meta.gitBlob,/^[a-f0-9]{40}$/);
       const bytes=await readFile(new URL(file,root));

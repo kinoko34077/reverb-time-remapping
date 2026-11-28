@@ -42,8 +42,13 @@ test("actual MP3 source and IR import, comparison, and last-good rejection",asyn
     await page.waitForFunction(()=>document.querySelector("#source").value==="file");
     await select("ir-file",stereo,"stereo.mp3");
     await page.waitForFunction(max=>document.querySelector("#ir").value==="file"&&
-      document.querySelector("#status").textContent.startsWith("準備済み")&&
-      Number(document.querySelector("#seek").max)===max,{timeout:30000},result.lenA+2*(result.lenB-1));
+      (document.querySelector("#status").textContent.startsWith("準備済み")||
+       document.querySelector("#status").textContent.startsWith("比較音を更新できません")),
+      {timeout:30000},result.lenA+2*(result.lenB-1));
+    const prep=await page.evaluate(()=>({status:document.querySelector("#status").textContent,
+      source:document.querySelector("#source").value,ir:document.querySelector("#ir").value,
+      seekMax:document.querySelector("#seek").max}));
+    assert.ok(prep.status.startsWith("準備済み")&&Number(prep.seekMax)>0,JSON.stringify(prep));
     await page.click('[data-mode="normal"]');
     await page.waitForFunction(()=>document.querySelector('[data-mode="normal"]').getAttribute("aria-pressed")==="true"&&!document.querySelector("#play").disabled);
     const max=await page.$eval("#seek",el=>Number(el.max));

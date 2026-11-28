@@ -312,30 +312,39 @@ test("replacing a playing long source resets playback to frame zero",async()=>{
   }finally{await closeApp(app);}
 });
 
-test("a stale slow file decode cannot replace a newer generated source",async()=>{
+test("a stale slow progressive file read cannot replace a newer generated source",async()=>{
   const app=await openApp();
   try{
     const {page}=app;
     await prepare(page);
     await page.evaluate(()=>{
-      const prototype=OfflineAudioContext.prototype;
-      prototype.decodeAudioData=function(){
-        const pcm=new Float32Array(4800).fill(.1);
-        return new Promise(resolve=>{window.__resolveSlowDecode=()=>resolve({numberOfChannels:1,length:pcm.length,sampleRate:48000,getChannelData:()=>pcm});});
-      };
-    });
-    await page.evaluate(()=>{
       const file=new File([new Uint8Array([73,68,51,0])],"slow.mp3",{type:"audio/mpeg"});
-      Object.defineProperty(file,"arrayBuffer",{value:()=>new Promise(resolve=>{window.__resolveSlowBytes=async()=>resolve(await Blob.prototype.arrayBuffer.call(file));})});
+      const slice=Blob.prototype.slice,stream=Blob.prototype.stream;
+      let delayed=false;
+      Object.defineProperty(file,"slice",{value:(...args)=>{
+        const chunk=slice.apply(file,args);
+        if(!delayed){
+          delayed=true;
+          Object.defineProperty(chunk,"stream",{value:()=>{
+            const reader=stream.call(chunk).getReader();let release;
+            const gate=new Promise(resolve=>{release=resolve;});
+            window.__resolveSlowRead=()=>release();
+            return new ReadableStream({
+              async pull(controller){await gate;const next=await reader.read();
+                if(next.done)controller.close();else controller.enqueue(next.value);},
+              cancel(reason){return reader.cancel(reason);}
+            });
+          }});
+        }
+        return chunk;
+      }});
       const files=new DataTransfer();files.items.add(file);
       const input=document.querySelector("#source-file");input.files=files.files;input.dispatchEvent(new Event("change",{bubbles:true}));
     });
-    await page.waitForFunction(()=>typeof window.__resolveSlowBytes==="function");
+    await page.waitForFunction(()=>typeof window.__resolveSlowRead==="function");
     await page.select("#source","sine");
     await page.waitForFunction(()=>document.querySelector("#status").textContent.startsWith("準備済み")&&document.querySelector("#source").value==="sine",{timeout:30000});
-    await page.evaluate(()=>window.__resolveSlowBytes());
-    await page.waitForFunction(()=>typeof window.__resolveSlowDecode==="function");
-    await page.evaluate(()=>window.__resolveSlowDecode());
+    await page.evaluate(()=>window.__resolveSlowRead());
     await new Promise(resolve=>setTimeout(resolve,150));
     assert.equal(await page.$eval("#source",field=>field.value),"sine");
     assert.ok(await page.$eval("#status",element=>element.textContent.startsWith("準備済み")));

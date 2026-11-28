@@ -48,6 +48,10 @@ test("three-minute stereo MP3 plays through the progressive IR Spectral kernel a
     const applied=await page.$eval("#ir-spectral-applied",element=>element.textContent);
     assert.match(applied,/exact-raw/);
     assert.match(applied,/1500\.000 ms/,applied);
+    await page.$eval("#ir-spectral-length",element=>{element.value="1500";element.dispatchEvent(new Event("change"));});
+    await page.waitForFunction(()=>document.querySelector("#ir-spectral-applied").textContent.includes("1500.000 ms")&&
+      !document.querySelector("#play").disabled,{timeout:30000});
+    assert.match(await page.$eval("#ir-spectral-applied",element=>element.textContent),/1500\.000 ms/);
     await page.$eval("#seek",(element,frame)=>{element.value=String(frame);element.dispatchEvent(new Event("input"));
       element.dispatchEvent(new Event("change"));},Math.round(170*44100));
     await page.waitForFunction(()=>Number(document.querySelector("#seek").value)>7_000_000&&

@@ -125,7 +125,7 @@ function showWindow(next,{latest=true}={}){
     (selected.end/irSampleRate*1000).toFixed(3)+" ms";
   irWave.refresh(true);
 }
-function readSpectral(sampleRate=session.sampleRate,irFrames=session.irFrames){
+function readSpectral(sampleRate=session.irSampleRate??session.sampleRate){
   const frames=id=>secondsToFrames(readNumber(id)/1000,sampleRate);
   const fftFrames=readNumber("ir-spectral-fft");
   const startFrame=frames("ir-spectral-start");
@@ -349,7 +349,7 @@ async function choose(next){
   let target=session;
   if(target.progressive&&next==="ir-spectral"&&!target.irSpectral){
     message("IRを再合成中…（入力音源は逐次読込のまま維持）");
-    target=await target.withIRSpectral(readSpectral(target.irSampleRate,target.irFrames),spectralWorker.render);
+    target=await target.withIRSpectral(readSpectral(target.irSampleRate),spectralWorker.render);
   }
   const oldTimeline=activeTimeline??session.timeline;
   const nextTimeline=session.progressive&&next==="reverse"?session.outputFor("reverse").timeline:session.timeline;
@@ -458,7 +458,7 @@ async function applyPreparation(job,next){
       fallbackReason="長尺音源の負Predelayは先読み処理が未実装のためDryへ切替";
     }
     if(next.progressive&&nextMode==="ir-spectral")
-      next=await next.withIRSpectral(readSpectral(next.irSampleRate,next.irFrames),spectralWorker.render);
+      next=await next.withIRSpectral(readSpectral(next.irSampleRate),spectralWorker.render);
     const destinationTimeline=next.progressive&&nextMode==="reverse"?next.outputFor("reverse").timeline:next.timeline;
     const frame=sourceChanged||stoppedSinceRequest?0:
       destinationTimeline.clampFrame(destinationTimeline.frameAtTime(previousTime));

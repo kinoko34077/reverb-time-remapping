@@ -17,6 +17,7 @@
 .wave-marker{position:absolute;pointer-events:none;top:28px;transform:translateX(-50%);padding:2px 6px;font-size:12px;font-weight:bold;color:#11232a;background:#6be2c4;border-radius:3px}.wave-marker-b{background:#ffd38a}
 .source-wave[data-loop-available=false] .wave-marker{display:none!important}
 .ir-wave .wave-detail-wrap{height:clamp(110px,19vh,180px)}
+.wet-wave .wave-detail-wrap{height:clamp(124px,21vh,200px)}
 @media(max-width:560px){main{padding:8px}.audition .fields{grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr))}.wave-detail-wrap{height:clamp(124px,23vh,210px)}}
 
 /* Prevent intrinsic canvas backing-store and form values from widening a

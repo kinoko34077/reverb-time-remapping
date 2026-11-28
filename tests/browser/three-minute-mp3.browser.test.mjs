@@ -12,6 +12,7 @@ test("three-minute stereo MP3 remains seekable, restores Normal from unsupported
     browser=await puppeteer.launch({executablePath:process.env.CHROME_BIN||"/usr/bin/google-chrome",headless:true,
       args:["--no-sandbox","--disable-dev-shm-usage","--mute-audio","--autoplay-policy=no-user-gesture-required"]});
     const page=await browser.newPage(),errors=[];
+    await page.setViewport({width:390,height:844,deviceScaleFactor:1,isMobile:true,hasTouch:true});
     page.on("pageerror",error=>errors.push(error.message));
     let ready=false;
     for(let i=0;i<30&&!ready;i++){
@@ -66,10 +67,12 @@ test("three-minute stereo MP3 remains seekable, restores Normal from unsupported
 
     await page.click('[data-mode="normal"]');
     await page.waitForFunction(()=>document.querySelector('[data-mode="normal"]').getAttribute("aria-pressed")==="true");
+    assert.equal(await page.$eval("#wet-wave-panel",element=>element.hidden),true);
     assert.equal(await page.$eval('[data-mode="wet-buffer"]',button=>button.disabled),false);
     await page.click('[data-mode="wet-buffer"]');
     await page.waitForFunction(()=>document.querySelector('[data-mode="wet-buffer"]').getAttribute("aria-pressed")==="true",
       {timeout:30000}).catch(async error=>{throw Error(`${error.message}; status=${await page.$eval("#status",e=>e.textContent)}`);});
+    assert.equal(await page.$eval("#wet-wave-panel",element=>element.hidden),false);
     assert.equal(await page.$eval("#wet-calibration",element=>element.disabled),true);
     assert.equal(await page.$eval("#wet-loop-style",element=>element.disabled),true);
     const axisBounds=await page.evaluate(()=>({sourceMax:Number(document.querySelector("#source-seek").max),
@@ -84,7 +87,13 @@ test("three-minute stereo MP3 remains seekable, restores Normal from unsupported
     await page.waitForFunction(()=>!document.querySelector("#play").disabled,{timeout:30000});
     await page.click("#play");
     await page.waitForFunction(()=>document.querySelector("#status").textContent==="再生要求を受理"||
-      document.querySelector("#status").textContent.startsWith("再生エラー"),{timeout:30000});
+      document.querySelector("#status").textContent.startsWith("再生エラー"),{timeout:30000}).catch(async error=>{
+      throw Error(`${error.message}; state=${JSON.stringify(await page.evaluate(()=>({
+        status:document.querySelector("#status").textContent,playDisabled:document.querySelector("#play").disabled,
+        source:document.querySelector("#source-position").textContent,wet:document.querySelector("#wet-position").textContent,
+        sourceFrame:document.querySelector("#source-seek").value,wetFrame:document.querySelector("#wet-seek").value
+      })))}; errors=${JSON.stringify(errors.slice(-5))}`);
+    });
     await new Promise(resolve=>setTimeout(resolve,1800));
     const beforeReverse=await page.evaluate(()=>({source:Number(document.querySelector("#source-seek").value),
       wet:Number(document.querySelector("#wet-seek").value),status:document.querySelector("#status").textContent}));
@@ -111,9 +120,24 @@ test("three-minute stereo MP3 remains seekable, restores Normal from unsupported
     await page.waitForFunction(()=>!document.querySelector("#wet-speed").disabled,{timeout:30000});
     await page.$eval("#wet-speed",element=>{element.value="1";element.dispatchEvent(new Event("change"));});
     await page.waitForFunction(()=>!document.querySelector("#wet-speed").disabled,{timeout:30000});
+    await page.click("#pause");
+    await page.waitForFunction(()=>document.querySelector("#status").textContent==="一時停止",{timeout:30000});
     const tailStart=Math.round(180.2*44100);
     await page.waitForFunction(()=>!document.querySelector("#source-seek").disabled&&
       !document.querySelector("#wet-seek").disabled,{timeout:30000});
+    const wetWaveBounds=await page.evaluate(()=>({hidden:document.querySelector("#wet-wave-panel").hidden,
+      max:Number(document.querySelector("#wet-wave-detail").getAttribute("aria-valuemax")),
+      sourceMax:Number(document.querySelector("#source-seek").max),
+      wetMax:Number(document.querySelector("#wet-seek").max)}));
+    assert.equal(wetWaveBounds.hidden,false,JSON.stringify(wetWaveBounds));
+    assert.ok(wetWaveBounds.max>wetWaveBounds.sourceMax&&wetWaveBounds.max===wetWaveBounds.wetMax,
+      JSON.stringify(wetWaveBounds));
+    const sourceBeforeWaveSeek=Number(await page.$eval("#source-seek",element=>element.value));
+    await page.focus("#wet-wave-detail");await page.keyboard.press("End");
+    const wetEnd=Number(await page.$eval("#wet-seek",element=>element.max));
+    await page.waitForFunction(frame=>Number(document.querySelector("#wet-seek").value)===frame,
+      {timeout:30000},wetEnd);
+    assert.equal(Number(await page.$eval("#source-seek",element=>element.value)),sourceBeforeWaveSeek);
     await page.$eval("#source-seek",(element,frame)=>{element.value=String(frame);element.dispatchEvent(new Event("change"));},
       Math.round(179.6*44100));
     await page.waitForFunction(()=>Number(document.querySelector("#source-seek").value)>Math.round(179.5*44100),
@@ -125,6 +149,27 @@ test("three-minute stereo MP3 remains seekable, restores Normal from unsupported
       {timeout:30000},tailStart).catch(async()=>{throw Error(JSON.stringify(await page.evaluate(()=>({wet:Number(document.querySelector("#wet-seek").value),
         max:Number(document.querySelector("#wet-seek").max),position:document.querySelector("#wet-position").textContent,
         status:document.querySelector("#status").textContent}))));});
+    const wetCanvas=await page.$("#wet-wave-detail");await wetCanvas.evaluate(element=>element.scrollIntoView({block:"center"}));
+    const wetRect=await wetCanvas.boundingBox(),dragFrom=wetRect.x+wetRect.width/2,dragY=wetRect.y+wetRect.height/2;
+    const sourceBeforeWaveDrag=Number(await page.$eval("#source-seek",element=>element.value));
+    await page.mouse.move(dragFrom,dragY);await page.mouse.down();
+    await page.mouse.move(dragFrom-16,dragY,{steps:3});await page.mouse.up();
+    await page.waitForFunction(frame=>Number(document.querySelector("#wet-seek").value)>frame,
+      {timeout:30000},tailStart);
+    assert.equal(Number(await page.$eval("#source-seek",element=>element.value)),sourceBeforeWaveDrag);
+    const narrow=await page.evaluate(()=>({width:innerWidth,scrollWidth:document.documentElement.scrollWidth}));
+    assert.ok(narrow.scrollWidth<=narrow.width,JSON.stringify(narrow));
+    const mobileWetCanvas=await page.$("#wet-wave-detail");
+    await mobileWetCanvas.evaluate(element=>element.scrollIntoView({block:"center"}));
+    const touchRect=await mobileWetCanvas.boundingBox(),wetBeforeTouch=Number(await page.$eval("#wet-seek",element=>element.value));
+    await page.touchscreen.tap(touchRect.x+touchRect.width*.75,touchRect.y+touchRect.height/2);
+    await page.waitForFunction(frame=>Number(document.querySelector("#wet-seek").value)>frame,
+      {timeout:30000},wetBeforeTouch);
+    assert.equal(Number(await page.$eval("#source-seek",element=>element.value)),sourceBeforeWaveDrag);
+    await page.$eval("#wet-seek",(element,frame)=>{element.value=String(frame);element.dispatchEvent(new Event("input"));
+      element.dispatchEvent(new Event("change"));},tailStart);
+    await page.waitForFunction(frame=>Number(document.querySelector("#wet-seek").value)===frame,
+      {timeout:30000},tailStart);
     await page.click("#play");
     await page.waitForFunction(()=>document.querySelector("#status").textContent==="再生要求を受理"||
       document.querySelector("#status").textContent.startsWith("再生エラー"),{timeout:30000});

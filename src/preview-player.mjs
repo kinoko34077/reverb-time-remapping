@@ -15,7 +15,7 @@ export function createPreviewPlayer(ctx,{onState=()=>{},createBridge=createSourc
   ceiling.curve=Float32Array.from({length:2049},(_,i)=>Math.max(-.9,Math.min(.9,i/1024-1)));
   const volume=ctx.createGain();volume.gain.value=1;
   gain.connect(volume);volume.connect(ceiling);ceiling.connect(ctx.destination);
-  const report=(extra={})=>onState({position,running,...extra});
+  const report=(extra={})=>onState({position,running,wetSignal:current?.wetSignal,...extra});
   function ensure(){if(disposed)throw Error("再生機構は終了済みです");}
   function stopHistory(history){
     if(!history?.buffer)return;
@@ -253,5 +253,5 @@ export function createPreviewPlayer(ctx,{onState=()=>{},createBridge=createSourc
     for(const prior of retiring)release(prior.bridge,prior.node,prior.graph,prior.history);retiring.clear();
     gain.disconnect();volume.disconnect();ceiling.disconnect();
   }
-  return {load,play,pause,stop,seek,configureAxis,setMix,setCalibration,setVolume,dispose,get state(){return {position,running,axes:current?.axes,calibration:current?.calibration};}};
+  return {load,play,pause,stop,seek,configureAxis,setMix,setCalibration,setVolume,dispose,get state(){return {position,running,axes:current?.axes,calibration:current?.calibration,wetSignal:current?.wetSignal};}};
 }

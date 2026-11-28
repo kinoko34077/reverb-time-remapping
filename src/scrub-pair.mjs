@@ -49,11 +49,14 @@ export async function createScrubPair({ctx,dry,wet,mode,mix,solo,calibration="na
     throw RangeError("共通座標のWetキャッシュが必要です");
   const progressiveWet=wet.source&&typeof wet.source.read==="function"&&wet.mode==="normal"?
     await createProgressiveWetPCMReader(wet.source,wet.ir,{predelaySeconds:wet.predelay,Context:globalThis.OfflineAudioContext}):null;
+  let wetSignal=wet;
   if(progressiveWet){
     if(wet.wetOutputFrames&&wet.wetOutputFrames!==progressiveWet.sourceFrames){
       progressiveWet.dispose();throw RangeError("Wet tailの出力長が比較座標と一致しません");
     }
-    wetLength=progressiveWet.sourceFrames;wet={...wet,reader:progressiveWet,sourceFrames:wetLength};calibration="natural";
+    wetLength=progressiveWet.sourceFrames;
+    wetSignal={source:progressiveWet,sourceFrames:wetLength,sampleRate:sr,origin:wet.origin??0};
+    wet={...wetSignal,reader:progressiveWet};calibration="natural";
   }
   let closed=false,running=false,connected=false;
   let wetCalibration=validateCalibration(calibration),calibrationFrame=null,calibrationScale=1;
@@ -239,7 +242,7 @@ export async function createScrubPair({ctx,dry,wet,mode,mix,solo,calibration="na
       report({type:"pair-accepted"});return {sourceFrame:state().source.frame};},
     async seek(frame){await Promise.all(["source","wet"].map(name=>
       configure(name,{frame:Math.min(signalLength(tracks[name].signal),frame)})));return {sourceFrame:state().source.frame};},
-    configure,dispose,get axes(){return state();},get calibration(){return calibrationState();},
+    configure,dispose,get axes(){return state();},get calibration(){return calibrationState();},get wetSignal(){return wetSignal;},
     setCalibration(mode){ensure();wetCalibration=validateCalibration(mode);applyCalibration(true);report({type:"axis-accepted",axis:"wet"});return true;},
     setMix(mix,solo){const values=scrubGains(mix,solo);Object.values(tracks).forEach((t,i)=>t.gain.gain.setTargetAtTime(values[i],ctx.currentTime,.005));}
   };

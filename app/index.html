@@ -19,6 +19,11 @@
 <section aria-label="比較試聴" class="audition"><h2>比較試聴</h2><div class="modes" role="group" aria-label="方式">
 <button data-mode="dry" aria-pressed="true">Dry</button><button data-mode="normal" aria-pressed="false">Normal</button><button data-mode="reverse" aria-pressed="false">Reverse</button><button data-mode="ir-window" aria-pressed="false">IR Window</button><button data-mode="wet-buffer" aria-pressed="false">Wet Buffer</button><button data-mode="wet-spectral" aria-pressed="false">Wet Spectral</button><button data-mode="ir-spectral" aria-pressed="false">IR Spectral</button>
 </div>
+<div class="ab-controls" role="group" aria-label="A/B方式比較">
+<div class="ab-side"><label>A方式<select id="ab-a-mode"></select></label><button id="ab-listen-a" type="button" aria-pressed="false">Aを聴く</button></div>
+<div class="ab-side"><label>B方式<select id="ab-b-mode"></select></label><button id="ab-listen-b" type="button" aria-pressed="false">Bを聴く</button></div>
+<output id="ab-state">未準備</output>
+</div>
 <div class="transport-row"><div class="modes"><button id="play" disabled>再生</button><button id="pause" disabled>一時停止</button><button id="stop" disabled>先頭へ</button></div></div>
 <div class="source-wave" id="source-wave-panel" aria-label="原音波形">
 <div class="wave-editor-toolbar"><strong>原音波形</strong><output id="source-wave-position">未準備</output><div class="wave-zoom-actions"><button id="wave-zoom-out" type="button" aria-label="波形を縮小">−</button><output id="wave-zoom-label" aria-live="off">—</output><button id="wave-zoom-in" type="button" aria-label="波形を拡大">＋</button></div></div>

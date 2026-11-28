@@ -54,8 +54,19 @@ test("prepared comparison estimate routes a three-minute stereo source away from
     sourceChannels:2,irFrames:72000,irChannels:2});
   const long=estimatePreparedComparisonBytes({sourceFrames:7_939_588,sourceSampleRate:44100,
     sourceChannels:2,irFrames:72000,irChannels:2});
-  assert.equal(short.length,191_998);assert.equal(short.bytes,15_359_840);assert.equal(short.withinBudget,true);
+  assert.equal(short.length,191_998);assert.equal(short.comparisonBytes,15_359_840);
+  assert.ok(short.bytes>short.comparisonBytes);assert.equal(short.withinBudget,true);
   assert.equal(long.withinBudget,false);assert.ok(long.bytes>600_000_000);
+});
+
+test("prepared comparison estimate includes convolution working memory at the native budget boundary",()=>{
+  const nearLimit=estimatePreparedComparisonBytes({sourceFrames:480_000,sourceSampleRate:48000,
+    sourceChannels:2,irFrames:72_000,irSampleRate:48000,irChannels:2});
+  assert.ok(nearLimit.comparisonBytes<64*1024*1024);
+  assert.ok(nearLimit.convolutionWorkingBytes>0);
+  assert.ok(nearLimit.decodedSourceBytes>0);
+  assert.equal(nearLimit.withinBudget,false);
+  assert.ok(nearLimit.bytes>64*1024*1024);
 });
 
 test("finite progressive source is read in bounded windows and materialized without changing its PCM",async()=>{

@@ -19,9 +19,14 @@ export function estimatePreparedComparisonBytes({sourceFrames,sourceSampleRate,s
   const start=Math.min(0,delay-(kernelFrames-1));
   const end=Math.max(inputFrames,inputFrames+kernelFrames-1+delay);
   const length=end-start,count=Math.max(sourceChannels,irChannels);
-  const bytes=4*count*length*COMPARISON_RESERVE_FACTOR;
-  return {bytes,length,channelCount:count,withinBudget:Number.isSafeInteger(bytes)&&
-    bytes<DEFAULT_PCM_BUDGET_BYTES};
+  const comparisonBytes=4*count*length*COMPARISON_RESERVE_FACTOR;
+  const convolutionFrames=inputFrames+kernelFrames-1;
+  const convolutionWorkingBytes=4*(inputFrames*sourceChannels+kernelFrames*irChannels+
+    count*convolutionFrames+3*(inputFrames+kernelFrames+convolutionFrames));
+  const decodedSourceBytes=4*sourceFrames*sourceChannels;
+  const bytes=comparisonBytes+convolutionWorkingBytes+decodedSourceBytes;
+  return {bytes,length,channelCount:count,comparisonBytes,convolutionWorkingBytes,decodedSourceBytes,
+    withinBudget:Number.isSafeInteger(bytes)&&bytes<=DEFAULT_PCM_BUDGET_BYTES};
 }
 
 export async function materializeProgressiveSource(source,{sampleRate=48000,
@@ -55,6 +60,26 @@ export async function materializeProgressiveSource(source,{sampleRate=48000,
     Float32Array.from(rendered.getChannelData(index)));
   if(!output.every(channel=>channel.every(Number.isFinite)))throw new RangeError("無効なPCM");
   return {origin:0,sampleRate,originalSampleRate:source.sampleRate,channels:output};
+}
+
+export async function resamplePCM(source,sampleRate,{Context=globalThis.OfflineAudioContext}={}){
+  const {channels,origin=0,originalSampleRate=source?.sampleRate}=source??{};
+  if(!Array.isArray(channels)||channels.length<1||channels.length>2||
+     !channels.every(channel=>channel instanceof Float32Array&&channel.length===channels[0].length)||
+     channels[0].length<1||!Number.isFinite(source.sampleRate)||source.sampleRate<=0||
+     !Number.isSafeInteger(origin)||!Number.isFinite(sampleRate)||sampleRate<=0)
+    throw new RangeError("変換元PCMまたはサンプルレートが不正です");
+  if(source.sampleRate===sampleRate)return source;
+  if(typeof Context!=="function")throw Error("音声サンプルレート変換が利用できません");
+  const outputFrames=Math.max(1,Math.round(channels[0].length*sampleRate/source.sampleRate));
+  const context=new Context(channels.length,outputFrames,sampleRate);
+  const input=context.createBuffer(channels.length,channels[0].length,source.sampleRate);
+  channels.forEach((channel,index)=>input.copyToChannel(channel,index));
+  const node=context.createBufferSource();node.buffer=input;node.connect(context.destination);node.start();
+  const rendered=await context.startRendering();
+  const output=Array.from({length:channels.length},(_,index)=>Float32Array.from(rendered.getChannelData(index)));
+  if(!output.every(channel=>channel.every(Number.isFinite)))throw new RangeError("無効なPCM");
+  return {origin,sampleRate,originalSampleRate,channels:output};
 }
 
 // ATF's reader intentionally caps output at two channels. Inspect the source

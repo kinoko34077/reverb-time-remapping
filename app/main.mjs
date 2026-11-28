@@ -6,12 +6,14 @@ import {isScrubMode} from "../src/scrub-pair.mjs";
 import {secondsToFrames} from "../src/convolution.mjs";
 import {createWetMixBinding,mountWetMixField} from "../src/wet-mix.mjs";
 import {createSourceWaveView} from "./source-wave-view.mjs";
-import {openProgressiveMaterial,estimatePreparedComparisonBytes} from "../src/progressive-material.mjs";
+import {openProgressiveMaterial,estimatePreparedComparisonBytes,resamplePCM} from "../src/progressive-material.mjs";
 import {createProgressiveSession} from "../src/progressive-session.mjs";
 const $=id=>document.getElementById(id);
 let ctx,player,session,mode="dry",appliedMode="dry",busy=false,seeking=false,sourceFile=null,irFile=null;
 let sourceFileRevision=0,preparationRevision=0,preparationWork=null,queuedPreparation=null;
 const fileReadRevision={source:0,ir:0};
+const nativeSourceCache=new WeakMap();
+let activeWaveSource=null,activeSourceReader=null;
 let appliedSourceKey=null,appliedSourceType="impulse",stopRevision=0,wetApplyTimer=null;
 let explicitStopIntent=false,stopping=false;
 const status=$("status"),seek=$("seek");
@@ -283,21 +285,26 @@ function pumpPreparation(){
         const estimate=estimatePreparedComparisonBytes({sourceFrames:job.source.sourceFrames,
           sourceSampleRate:job.source.sampleRate,sourceChannels:job.source.channelCount,
           irFrames:job.ir.channels[0].length,irSampleRate:job.ir.sampleRate,irChannels:job.ir.channels.length,
-          delaySeconds:job.predelay});
+          processingRate:job.ir.sampleRate,delaySeconds:job.predelay});
         if(estimate.withinBudget){
           if(!job.source.file)throw Error("短尺音源を既存デコーダで準備できません");
-          const reader=job.source,pcm=await readLocalAudio(reader.file);
+          const reader=job.source;
+          let cached=nativeSourceCache.get(reader);
+          if(!cached||cached.sampleRate!==job.ir.sampleRate){
+            let pcm=await readLocalAudio(reader.file);pcm=await resamplePCM(pcm,job.ir.sampleRate);
+            cached={sampleRate:job.ir.sampleRate,pcm};nativeSourceCache.set(reader,cached);
+          }
+          const pcm=cached.pcm;
           if(job.revision!==preparationRevision)return;
-          if($("source").value==="file"&&sourceFile===reader)sourceFile=pcm;
-          job.source=pcm;
-          job.sourceRepresentationChanged=true;
-          next=await prepareComparison(job.source,job.ir,{predelay:job.predelay,irWindow:job.irWindow});
+          job.waveSource=pcm;
+          next=await prepareComparison(pcm,job.ir,{predelay:job.predelay,irWindow:job.irWindow});
         }else{
           if(job.source.canReadPCM===false)
             throw Error("この長さの音源は逐次デコードできません。対応codecの音源か短い音源を選んでください");
+          job.waveSource=job.source;
           next=createProgressiveSession(job.source,job.ir,{predelay:job.predelay,irWindowSettings:job.irWindow});
         }
-      }else next=await prepareComparison(job.source,job.ir,{predelay:job.predelay,irWindow:job.irWindow});
+      }else{job.waveSource=job.source;next=await prepareComparison(job.source,job.ir,{predelay:job.predelay,irWindow:job.irWindow});}
       if(job.revision!==preparationRevision)return;
       await applyPreparation(job,next);
     }catch(error){if(job.revision===preparationRevision){
@@ -318,7 +325,13 @@ async function applyPreparation(job,next){
     const stopToken=stopRevision,sourceChanged=job.sourceKey!==appliedSourceKey;
     const stoppedSinceRequest=explicitStopIntent;
     const wasRunning=!stoppedSinceRequest&&!!player?.state.running;
-    const frame=sourceChanged||stoppedSinceRequest?0:Math.round(player?.state.position??0);
+    const previousFrame=Math.round(player?.state.position??0);
+    let frame=sourceChanged||stoppedSinceRequest?0:previousFrame;
+    if(!sourceChanged&&!stoppedSinceRequest&&session&&next.sampleRate>0){
+      const sourceTime=(session.interval.start+previousFrame)/session.sampleRate;
+      frame=Math.round(sourceTime*next.sampleRate-next.interval.start);
+      frame=Math.max(0,Math.min(next.length,frame));
+    }
     await audio();
     if(job.revision!==preparationRevision)return;
     const resume=wasRunning&&stopRevision===stopToken;
@@ -339,11 +352,19 @@ async function applyPreparation(job,next){
     mode=appliedMode=nextMode;
     wetApplyRequested=false;clearTimeout(wetApplyTimer);wetApplyTimer=null;
     const priorProgressive=session?.progressive?session.source:null;
+    const priorReader=activeSourceReader,waveSourceChanged=sourceChanged||activeWaveSource!==job.waveSource;
     session=next;appliedSourceKey=job.sourceKey;appliedSourceType=job.sourceType;savedAxes={};pendingWave=null;
+    activeWaveSource=job.waveSource;
+    activeSourceReader=job.sourceType==="file"&&typeof job.source?.read==="function"?job.source:null;
     if(queuedWindow?.mode==="ir-spectral")queuedWindow={...queuedWindow,settings:readSpectral()};
     syncComparisonRange(next,{reset:true});show(player.state.position);
-    if(sourceChanged||job.sourceRepresentationChanged)wave.setSource(job.source,next);else wave.setInterval(next);
-    if(priorProgressive&&priorProgressive!==next.source&&priorProgressive!==sourceFile)
+    if(waveSourceChanged)wave.setSource(job.waveSource,next);else wave.setInterval(next);
+    if(next.progressive&&job.source?.read)nativeSourceCache.delete(job.source);
+    if(priorReader&&priorReader!==activeSourceReader){
+      nativeSourceCache.delete(priorReader);
+      if(priorReader!==sourceFile)priorReader.dispose();
+    }
+    else if(priorProgressive&&priorProgressive!==next.source&&priorProgressive!==sourceFile)
       priorProgressive.dispose();
     for(const name of ["source","wet"]){
       $(name+"-speed").value="1";$(name+"-repeat").checked=false;$(name+"-loop-style").value="repeat";

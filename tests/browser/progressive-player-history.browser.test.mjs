@@ -27,10 +27,21 @@ test("progressive replacement and resume restore convolution at the final transp
         node.start=(...args)=>{if(args.length>1)historyStarts.push(args);return start(...args);};
         return node;
       };
+      const createGain=ctx.createGain.bind(ctx),routeMuteTargets=[];
+      ctx.createGain=()=>{
+        const node=createGain(),setTarget=node.gain.setTargetAtTime.bind(node.gain);
+        node.gain.setTargetAtTime=(value,...args)=>{routeMuteTargets.push(value);return setTarget(value,...args);};
+        return node;
+      };
       const restored=[],bridges=[],seekTargets=[],playingDuringRestore=[];
+      let holdNextBridge=false,bridgeCreationEntered,releaseBridgeCreation;
       const source={sourceFrames:480000,channelCount:1,sampleRate:48000,maxReadFrames:1024,
         async read(start,count){return {startFrame:start,channels:[new Float32Array(count)]};},dispose(){}};
       const bridgeFactory=async({ctx,startFrame,onEvent})=>{
+        if(holdNextBridge){
+          bridgeCreationEntered();
+          await new Promise(resolve=>{releaseBridgeCreation=resolve;});
+        }
         const node=ctx.createGain();let frame=startFrame,running=false;
         node.processingMode="raw";
         node.latest={sourceFrame:frame,outputTime:ctx.currentTime,running,ended:false};
@@ -66,9 +77,18 @@ test("progressive replacement and resume restore convolution at the final transp
       await player.pause();const pauseFrame=player.state.position;
       const readsBeforeResume=restored.length;
       await player.play();
+      const afterResume=bridges.length;
+      const readsAfterResume=restored.length,resumeHistoryFrame=restored.at(-1);
+      const resumedFrame=player.state.position;
+      holdNextBridge=true;routeMuteTargets.length=0;
+      const entered=new Promise(resolve=>{bridgeCreationEntered=resolve;});
+      const stopping=player.stop();
+      await entered;
+      const stopMutedBeforeReplacement=routeMuteTargets.includes(0)&&!bridges.at(-1).latest.running;
+      releaseBridgeCreation();holdNextBridge=false;await stopping;
       const result={restored,seekTargets,playingDuringRestore,historyStarts,replacementFrame,pauseFrame,readsBeforeResume,
-        readsAfterResume:restored.length,bridgesBeforePause:beforePause,bridgesAfterResume:bridges.length,
-        resumedFrame:player.state.position};
+        readsAfterResume,bridgesBeforePause:beforePause,bridgesAfterResume:afterResume,resumeHistoryFrame,
+        resumedFrame,stopMutedBeforeReplacement,stoppedFrame:player.state.position};
       player.dispose();await ctx.close();return result;
     });
     assert.ok(result.replacementFrame>0,JSON.stringify(result));
@@ -78,8 +98,10 @@ test("progressive replacement and resume restore convolution at the final transp
     assert.ok(result.historyStarts.length>=1&&result.historyStarts[0][1]>0&&result.historyStarts[0][1]<1,
       "history offset must be elapsed seconds inside the prepared wet tail: "+JSON.stringify(result.historyStarts));
     assert.equal(result.bridgesAfterResume,result.bridgesBeforePause+1,"resume must rebuild the live convolution route");
-    assert.equal(result.restored.at(-1),result.pauseFrame,"resume history must start at the accepted pause frame");
+    assert.equal(result.resumeHistoryFrame,result.pauseFrame,"resume history must start at the accepted pause frame");
     assert.ok(result.readsAfterResume>result.readsBeforeResume,JSON.stringify(result));
     assert.ok(result.resumedFrame>result.pauseFrame,JSON.stringify(result));
+    assert.ok(result.stopMutedBeforeReplacement,JSON.stringify(result));
+    assert.equal(result.stoppedFrame,0,JSON.stringify(result));
   }finally{await cleanupTestProcesses(browser,[server]);}
 });

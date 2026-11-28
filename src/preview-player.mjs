@@ -205,6 +205,13 @@ export function createPreviewPlayer(ctx,{onState=()=>{},createBridge=createSourc
     ensure();const token=++revision,target=current;
     if(!target){position=0;running=false;report({phase:"stopped"});return;}
     if(currentSignal?.source&&["normal","ir-window"].includes(currentSignal.mode)){
+      stopHistory(currentHistory);
+      const now=ctx.currentTime;
+      route?.gain.cancelScheduledValues(now);
+      route?.gain.setTargetAtTime(0,now,.003);
+      const receipt=await target.pause();
+      if(disposed||current!==target||token!==revision)return;
+      position=receipt.sourceFrame;running=false;
       await load(currentSignal,currentGain,{frame:0,resume:false,reset:true});
       if(disposed)return;
       position=0;running=false;report({phase:"stopped"});return;

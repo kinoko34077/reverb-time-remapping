@@ -66,6 +66,46 @@ test("three-minute stereo MP3 remains seekable, restores Normal from unsupported
 
     await page.click('[data-mode="normal"]');
     await page.waitForFunction(()=>document.querySelector('[data-mode="normal"]').getAttribute("aria-pressed")==="true");
+    assert.equal(await page.$eval('[data-mode="wet-buffer"]',button=>button.disabled),false);
+    await page.click('[data-mode="wet-buffer"]');
+    await page.waitForFunction(()=>document.querySelector('[data-mode="wet-buffer"]').getAttribute("aria-pressed")==="true",
+      {timeout:30000}).catch(async error=>{throw Error(`${error.message}; status=${await page.$eval("#status",e=>e.textContent)}`);});
+    assert.equal(await page.$eval("#wet-calibration",element=>element.disabled),true);
+    assert.equal(await page.$eval("#wet-loop-style",element=>element.disabled),true);
+    await page.$eval("#source-seek",(element,frame)=>{element.value=String(frame);element.dispatchEvent(new Event("change"));},
+      Math.round(150*44100));
+    await page.waitForFunction(()=>document.querySelector("#source-position").textContent.includes("150."),{timeout:30000});
+    await page.$eval("#wet-seek",(element,frame)=>{element.value=String(frame);element.dispatchEvent(new Event("input"));
+      element.dispatchEvent(new Event("change"));},Math.round(176*44100));
+    await page.waitForFunction(()=>document.querySelector("#wet-position").textContent.includes("176."),{timeout:30000});
+    await page.waitForFunction(()=>!document.querySelector("#play").disabled,{timeout:30000});
+    await page.click("#play");
+    await page.waitForFunction(()=>document.querySelector("#status").textContent==="再生要求を受理"||
+      document.querySelector("#status").textContent.startsWith("再生エラー"),{timeout:30000});
+    await new Promise(resolve=>setTimeout(resolve,1800));
+    const beforeReverse=await page.evaluate(()=>({source:Number(document.querySelector("#source-seek").value),
+      wet:Number(document.querySelector("#wet-seek").value),status:document.querySelector("#status").textContent}));
+    assert.ok(beforeReverse.source>Math.round(150*44100),JSON.stringify(beforeReverse));
+    await page.$eval("#wet-speed",element=>{element.value="-1";element.dispatchEvent(new Event("change"));});
+    await new Promise(resolve=>setTimeout(resolve,1500));
+    const afterReverse=await page.evaluate(()=>({source:Number(document.querySelector("#source-seek").value),
+      wet:Number(document.querySelector("#wet-seek").value),status:document.querySelector("#status").textContent}));
+    assert.ok(afterReverse.source>beforeReverse.source,JSON.stringify({beforeReverse,afterReverse}));
+    assert.ok(afterReverse.wet<beforeReverse.wet,JSON.stringify({beforeReverse,afterReverse}));
+    await page.$eval("#wet-speed",element=>{element.value="0";element.dispatchEvent(new Event("change"));});
+    await new Promise(resolve=>setTimeout(resolve,400));
+    const freezeAnchor=await page.$eval("#wet-seek",element=>Number(element.value));
+    await new Promise(resolve=>setTimeout(resolve,600));
+    const frozen=await page.evaluate(()=>({source:Number(document.querySelector("#source-seek").value),
+      wet:Number(document.querySelector("#wet-seek").value)}));
+    assert.ok(frozen.source>afterReverse.source,JSON.stringify({afterReverse,frozen}));
+    assert.equal(frozen.wet,freezeAnchor,JSON.stringify({freezeAnchor,frozen}));
+    assert.deepEqual(errors,[]);
+    await page.click("#stop");
+    await page.waitForFunction(()=>Number(document.querySelector("#source-seek").value)===0,{timeout:10000});
+
+    await page.click('[data-mode="normal"]');
+    await page.waitForFunction(()=>document.querySelector('[data-mode="normal"]').getAttribute("aria-pressed")==="true");
     await page.$eval("#seek",(element,frame)=>{
       element.value=String(frame);element.dispatchEvent(new Event("input"));element.dispatchEvent(new Event("change"));
     },Math.round(176*44100));
@@ -79,6 +119,10 @@ test("three-minute stereo MP3 remains seekable, restores Normal from unsupported
     assert.ok(Number(playback.renderedFrames)>256,JSON.stringify(playback));
     await page.click("#stop");
     await page.waitForFunction(()=>Number(document.querySelector("#seek").value)===0);
+    await page.$eval("#predelay",element=>{element.value="-10";element.dispatchEvent(new Event("change"));});
+    await page.waitForFunction(()=>document.querySelector("#status").textContent.startsWith("準備済み:")&&
+      document.querySelector("#status").textContent.includes("負Predelay"),{timeout:30000});
+    assert.equal(await page.$eval('[data-mode="dry"]',button=>button.getAttribute("aria-pressed")),"true");
     assert.deepEqual(errors,[]);
   }finally{await cleanupTestProcesses(browser,[server]);}
 });

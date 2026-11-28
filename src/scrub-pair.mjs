@@ -2,6 +2,7 @@ import {createSourcePCMBridge} from "../shared/atf/source-pcm-bridge.mjs";
 import {validatePlaybackSpeed} from "../shared/atf/source-timeline.mjs";
 import {createReflectedPCMSource} from "../shared/atf/reflected-pcm-source.mjs";
 import {createLocalRMSCalibration,validateCalibration} from "./level-calibration.mjs";
+import {createProgressiveWetPCMReader} from "./progressive-wet-reader.mjs";
 
 export const isScrubMode=mode=>mode==="wet-buffer"||mode==="wet-spectral";
 export function scrubGains(wet,solo){
@@ -29,23 +30,29 @@ export function axisPlan({frame,speed,repeat=false,rangeStartFrame=0,rangeEndFra
 }
 // The reflected PCM reader is the canonical coordinate mapping, not a new clock.
 export function axisSource(signal,config,processingMode){
-  const length=signal.channels[0].length;
+  const reader=signal.reader??signal.source;
+  const length=signal.sourceFrames??signal.channels?.[0]?.length;
   const plan=axisPlan(config,length,signal.sampleRate,processingMode);
   if(!["repeat","pingpong"].includes(config.loopStyle??"repeat"))throw RangeError("反復方式が不正です");
+  if(reader&&config.repeat&&config.loopStyle==="pingpong")throw Error("長尺readerの往復ループは未対応です");
   // Freeze uses original context (not a reflected, possibly one-sample buffer).
   if(!config.repeat||config.loopStyle!=="pingpong"||plan.frozen)
-    return {plan,reader:null,frame:plan.frame,a:plan.a,b:plan.b,loop:plan.loop};
-  const reader=createReflectedPCMSource({channels:signal.channels,startFrame:plan.a,endFrame:plan.b});
-  return {plan,reader,frame:reader.toVirtualFrame(plan.frame,{returning:!!config.returning}),
-    a:0,b:reader.sourceFrames,loop:true};
+    return {plan,reader:reader??null,frame:plan.frame,a:plan.a,b:plan.b,loop:plan.loop};
+  const reflected=createReflectedPCMSource({channels:signal.channels,startFrame:plan.a,endFrame:plan.b});
+  return {plan,reader:reflected,frame:reflected.toVirtualFrame(plan.frame,{returning:!!config.returning}),
+    a:0,b:reflected.sourceFrames,loop:true};
 }
 export async function createScrubPair({ctx,dry,wet,mode,mix,solo,calibration="natural",onEvent=()=>{},positions={}}){
-  const length=dry.channels[0].length,sr=dry.sampleRate;
-  if(!isScrubMode(mode)||wet.channels[0].length!==length||wet.sampleRate!==sr||wet.origin!==dry.origin)
+  const length=dry.sourceFrames??dry.channels?.[0]?.length,sr=dry.sampleRate;
+  const wetLength=wet.sourceFrames??wet.channels?.[0]?.length;
+  if(!isScrubMode(mode)||wetLength!==length||wet.sampleRate!==sr||wet.origin!==dry.origin)
     throw RangeError("共通座標のWetキャッシュが必要です");
+  const progressiveWet=wet.source&&typeof wet.source.read==="function"&&wet.mode==="normal"?
+    await createProgressiveWetPCMReader(wet.source,wet.ir,{predelaySeconds:wet.predelay,Context:globalThis.OfflineAudioContext}):null;
+  if(progressiveWet){wet={...wet,reader:progressiveWet};calibration="natural";}
   let closed=false,running=false,connected=false;
   let wetCalibration=validateCalibration(calibration),calibrationFrame=null,calibrationScale=1;
-  const localLevel=createLocalRMSCalibration(wet.channels,Math.max(1,Math.round(.05*sr)));
+  const localLevel=progressiveWet?null:createLocalRMSCalibration(wet.channels,Math.max(1,Math.round(.05*sr)));
   const tracks={},routes=new Set(),stagedRoutes=new Set(),nodes=[],gains=scrubGains(mix,solo);
   const state=()=>Object.fromEntries(Object.entries(tracks).map(([k,t])=>[k,{
     frame:t.config.speed===0?t.anchor:t.frame,speed:t.config.speed,repeat:t.config.repeat,
@@ -56,23 +63,24 @@ export async function createScrubPair({ctx,dry,wet,mode,mix,solo,calibration="na
     const frame=Math.round(t.config.speed===0?t.anchor:t.frame);
     if(!force&&frame===calibrationFrame)return;
     calibrationFrame=frame;
-    const scale=localLevel.scaleAt(frame,wetCalibration);
+    const scale=localLevel?.scaleAt(frame,wetCalibration)??1;
     if(force||scale!==calibrationScale){
       calibrationScale=scale;
       if(running)t.level.gain.setTargetAtTime(scale,ctx.currentTime,.01);
       else {t.level.gain.cancelScheduledValues(ctx.currentTime);t.level.gain.value=scale;}
     }
   }
-  const calibrationState=()=>({mode:wetCalibration,targetScale:calibrationScale,windowFrames:localLevel.windowFrames});
+  const calibrationState=()=>({mode:progressiveWet?"natural":wetCalibration,targetScale:calibrationScale,
+    windowFrames:localLevel?.windowFrames??0,available:!progressiveWet});
   const report=event=>{
     applyCalibration();
     onEvent({...event,sourceFrame:state().source?.frame??0,running,
       ended:Object.values(tracks).every(t=>t.ended),axes:state(),calibration:calibrationState()});
   };
-  const mapFrame=(route,frame)=>route.reader?route.reader.toSourceFrame(frame):frame;
+  const mapFrame=(route,frame)=>route.reader?.toSourceFrame?route.reader.toSourceFrame(frame):frame;
   function updateFrame(t,route,frame){
     t.frame=mapFrame(route,frame);
-    if(route.reader)t.returning=route.reader.isReturning(frame);
+    if(route.reader?.isReturning)t.returning=route.reader.isReturning(frame);
   }
   function release(route){
     if(!route)return;
@@ -135,7 +143,7 @@ export async function createScrubPair({ctx,dry,wet,mode,mix,solo,calibration="na
     t.route.node.gain.value=1;updateFrame(t,t.route,source.frame);
     if(name==="wet")applyCalibration(true);
   };
-  function dispose(){if(closed)return;closed=true;for(const route of [...routes])release(route);for(const node of nodes)node.disconnect();}
+  function dispose(){if(closed)return;closed=true;for(const route of [...routes])release(route);for(const node of nodes)node.disconnect();progressiveWet?.dispose();}
   try{await setup("source",dry,"raw",gains[0]);await setup("wet",wet,mode==="wet-spectral"?"pv":"raw",gains[1]);}
   catch(error){dispose();throw error;}
   async function configure(name,config){
@@ -190,7 +198,11 @@ export async function createScrubPair({ctx,dry,wet,mode,mix,solo,calibration="na
     }
     let receipt;
     if(old.reader){
-      if(Object.hasOwn(config,"frame"))receipt=await old.bridge.scrub(source.frame,plan.speed);
+      const loopChanged=plan.loop!==priorPlan.loop||plan.a!==priorPlan.a||plan.b!==priorPlan.b;
+      const rawFreeze=t.processingMode==="raw"&&(plan.frozen||priorPlan.frozen);
+      if(loopChanged)receipt=await old.bridge.setLoopConfiguration(plan.a,plan.b,plan.loop);
+      if(Object.hasOwn(config,"frame")||rawFreeze&&loopChanged)
+        receipt=await old.bridge.scrub(Math.min(length-1,plan.frame),plan.speed);
       else if(plan.speed!==priorPlan.speed)receipt=await old.bridge.setSpeed(plan.speed);
     }else{
       const loopChanged=plan.loop!==priorPlan.loop||plan.a!==priorPlan.a||plan.b!==priorPlan.b;

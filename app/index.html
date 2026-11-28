@@ -51,7 +51,7 @@
 <label>Wet区間開始 (s)<input id="wet-range-start" type="number" step="any" value="0"></label>
 <label>Wet区間終了 (s)<input id="wet-range-end" type="number" step="any" value="0"></label>
 <output id="wet-range-applied">反復区間: —</output>
-</div><p class="note">0×: SourceとWet Bufferは局所50msループ、Wet Spectralは位相継続再合成。反復・往復区間は共通時間座標の秒で指定（終了点を含まない）。往復のPVは折返した波形文脈を解析します。固定時の局所波形は別。素材の無音部は無音。Wet補正は元のWetの局所50ms RMSを全体RMSへ近づける試聴用ゲインで、IR補正・Dry・Wet再合成自体は変更しません。Wetは準備済み通常残響の独立参照であり、現在のSource操作で再畳み込みしません。</p>
+</div><p class="note">0×: SourceとWet Bufferは局所50msループ、Wet Spectralは位相継続再合成。反復区間は共通時間座標の秒で指定（終了点を含まない）。長尺音源の往復と局所RMS補正は未対応です。往復のPVは折返した波形文脈を解析します。固定時の局所波形は別。素材の無音部は無音。Wet補正は元のWetの局所50ms RMSを全体RMSへ近づける試聴用ゲインで、IR補正・Dry・Wet再合成自体は変更しません。Wetは通常残響の独立参照であり、現在のSource操作で再畳み込みしません。長尺では要求範囲のWet PCMだけを逐次生成します。</p>
 </div><div id="ir-live" hidden>
 <label>IR窓の開始位置 (ms) <output id="window-request">—</output><input id="ir-window-scrub" type="range" min="0" max="1" step="any" value="0" disabled></label>
 <div class="source-wave ir-wave" id="ir-wave-panel" aria-label="IR波形と時間窓">

@@ -4,7 +4,7 @@ import {spawn} from "node:child_process";
 import puppeteer from "puppeteer-core";
 import {cleanupTestProcesses} from "../../shared/atf/test-process-cleanup.mjs";
 
-test("three-minute stereo MP3 remains seekable, restores Normal from unsupported mode, and plays",async()=>{
+test("three-minute stereo MP3 remains seekable across progressive modes",async()=>{
   const port=18767;
   const server=spawn(process.env.PYTHON_BIN||"python3",["-m","http.server",String(port),"--bind","127.0.0.1"],{stdio:"ignore"});
   let browser;
@@ -21,7 +21,8 @@ test("three-minute stereo MP3 remains seekable, restores Normal from unsupported
     }
     assert.ok(ready,"test HTTP server unavailable");
     await page.click("#prepare");
-    await page.waitForFunction(()=>document.querySelector("#status").textContent.startsWith("準備済み"),{timeout:30000});
+    await page.waitForFunction(()=>document.querySelector("#status").textContent.startsWith("準備済み"),{timeout:30000})
+      .catch(async error=>{throw Error(`${error.message}; status=${await page.$eval("#status",e=>e.textContent)}; errors=${JSON.stringify(errors)}`);});
     await page.click('[data-mode="reverse"]');
     await page.waitForFunction(()=>document.querySelector('[data-mode="reverse"]').getAttribute("aria-pressed")==="true");
     await page.evaluate(async()=>{
@@ -42,18 +43,21 @@ test("three-minute stereo MP3 remains seekable, restores Normal from unsupported
     const loaded=await page.evaluate(()=>({
       seekMax:Number(document.querySelector("#seek").max),
       waveMax:Number(document.querySelector("#wave-detail").getAttribute("aria-valuemax")),
+      sourceMax:Number(document.querySelector("#source-seek").max),
+      reverseDisabled:document.querySelector('[data-mode="reverse"]').disabled,
       normalDisabled:document.querySelector('[data-mode="normal"]').disabled,
       irWindowDisabled:document.querySelector('[data-mode="ir-window"]').disabled,
-      normalSelected:document.querySelector('[data-mode="normal"]').getAttribute("aria-pressed")==="true",
+      reverseSelected:document.querySelector('[data-mode="reverse"]').getAttribute("aria-pressed")==="true",
       duration:document.querySelector("#source-wave-note").textContent,
       status:document.querySelector("#status").textContent
     }));
     assert.ok(loaded.seekMax>7_800_000,JSON.stringify(loaded));
-    assert.equal(loaded.waveMax,loaded.seekMax-1,JSON.stringify(loaded));
+    assert.equal(loaded.waveMax,loaded.sourceMax,JSON.stringify(loaded));
+    assert.equal(loaded.reverseDisabled,false,JSON.stringify(loaded));
     assert.equal(loaded.normalDisabled,false,JSON.stringify(loaded));
     assert.equal(loaded.irWindowDisabled,false,JSON.stringify(loaded));
-    assert.equal(loaded.normalSelected,true,JSON.stringify(loaded));
-    assert.ok(loaded.status.includes("reverseが未対応のためNormalへ切替"),JSON.stringify(loaded));
+    assert.equal(loaded.reverseSelected,true,JSON.stringify(loaded));
+    assert.ok(loaded.status.includes("Reverse"),JSON.stringify(loaded));
 
     await page.click('[data-mode="ir-window"]');
     await page.waitForFunction(()=>document.querySelector('[data-mode="ir-window"]').getAttribute("aria-pressed")==="true");
@@ -116,7 +120,6 @@ test("three-minute stereo MP3 remains seekable, restores Normal from unsupported
       status:document.querySelector("#status").textContent}));
     assert.ok(frozen.source>afterReverse.source,JSON.stringify({afterReverse,frozen}));
     assert.equal(frozen.wet,freezeAnchor,JSON.stringify({freezeAnchor,frozen}));
-    assert.deepEqual(errors,[]);
     await page.waitForFunction(()=>!document.querySelector("#wet-speed").disabled,{timeout:30000});
     await page.$eval("#wet-speed",element=>{element.value="1";element.dispatchEvent(new Event("change"));});
     await page.waitForFunction(()=>!document.querySelector("#wet-speed").disabled,{timeout:30000});

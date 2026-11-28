@@ -17,7 +17,7 @@ const fileReadRevision={source:0,ir:0};
 const nativeSourceCache=new WeakMap();
 let activeWaveSource=null,activeSourceReader=null,activeIRSource=null,activeIRKey=null;
 let appliedSourceKey=null,appliedSourceType="impulse",stopRevision=0,wetApplyTimer=null;
-let explicitStopIntent=false,stopping=false;
+let explicitStopIntent=false,stopping=false,activeTimeline=null;
 const status=$("status"),seek=$("seek");
 let savedAxes={};const dragging=new Set();
 let pendingWave=null,waveSeekWork=false,pendingWetWave=null,wetWaveSeekWork=false;
@@ -194,9 +194,9 @@ function pumpWindow(){
       try{
         await run(async()=>{
           if(job.revision!==windowRevision||mode!==job.mode)return;
-          const accepted=await player.load(next.select(mode,binding.value,$("solo").value),next.gain.applied,{crossfade:true});
+          const accepted=await player.load(await next.select(mode,binding.value,$("solo").value),next.gain.applied,{crossfade:true});
           if(!accepted)return;
-          session=next;pendingWave=null;syncComparisonRange(next);wave.setInterval(next);
+          session=next;if(base!==next)base.dispose?.();pendingWave=null;syncComparisonRange(next);wave.setInterval(next);
           showWindow(next,{latest:job.mode==="ir-window"&&job.revision===windowRevision});
           if(!next.progressive)showSpectral(next,{latest:job.mode==="ir-spectral"&&job.revision===windowRevision});show(player.state.position);
           if(job.revision===windowRevision)message(job.mode==="ir-spectral"?"IR再合成を適用":"IR窓を適用: "+next.irCalibration);
@@ -229,8 +229,8 @@ function message(s){status.textContent=s;}
 const abModes={a:"dry",b:"normal"};
 function controls(){
   for(const id of ["source","source-file","ir","ir-file","frequency","ir-length","predelay","ir-window-start","ir-window-length","ir-calibration","prepare","wet","solo"])$(id).disabled=busy;
-  for(const b of document.querySelectorAll("[data-mode]")){b.disabled=busy||!session||(session.progressive&&!['dry','normal','ir-window','wet-buffer'].includes(b.dataset.mode));b.setAttribute("aria-pressed",String(b.dataset.mode===appliedMode));}
-  const available=mode=>!!session&&(!session.progressive||["dry","normal","ir-window","wet-buffer"].includes(mode));
+  for(const b of document.querySelectorAll("[data-mode]")){b.disabled=busy||!session||(session.progressive&&!['dry','normal','reverse','ir-window','wet-buffer'].includes(b.dataset.mode));b.setAttribute("aria-pressed",String(b.dataset.mode===appliedMode));}
+  const available=mode=>!!session&&(!session.progressive||["dry","normal","reverse","ir-window","wet-buffer"].includes(mode));
   for(const slot of ["a","b"]){
     const other=slot==="a"?"b":"a",select=$("ab-"+slot+"-mode"),button=$("ab-listen-"+slot);
     select.disabled=busy;
@@ -255,7 +255,8 @@ function controls(){
       session.progressive&&suffix==="loop-style";
 }
 function syncComparisonRange(next,{reset=false}={}){
-  seek.max=String(next.timeline.length);
+  activeTimeline=next.progressive&&appliedMode==="reverse"?next.outputFor("reverse").timeline:next.timeline;
+  seek.max=String(activeTimeline.length);
   const a=next.timeline.timeAtFrame(0);
   for(const name of ["source","wet"]){
     const frames=name==="wet"&&next.progressive?next.wetOutputFrames:next.length;
@@ -271,8 +272,9 @@ function syncComparisonRange(next,{reset=false}={}){
 }
 function show(frame){
   if(!session)return;
-  if(!seeking)seek.value=String(session.timeline.clampFrame(frame));
-  $("time").textContent=session.timeline.timeAtFrame(frame).toFixed(3)+" s";
+  const timeline=activeTimeline??session.timeline;
+  if(!seeking)seek.value=String(timeline.clampFrame(frame));
+  $("time").textContent=timeline.timeAtFrame(frame).toFixed(3)+" s";
 }
 async function run(fn){
   if(busy)return;busy=true;controls();
@@ -327,18 +329,23 @@ async function loadMode(target,next,options={}){
     const positions=options.reset?{}:{...savedAxes,
       source:{...savedAxes.source,frame:Math.round(player.state.position)}};
     const mix=binding.value,solo=$("solo").value;
-    const dry=target.progressive?target.select("dry",mix,solo):target.signals.dry;
-    const wet=target.progressive?target.select("normal",mix,solo):target.signals.normal;
+    const dry=target.progressive?await target.select("dry",mix,solo):target.signals.dry;
+    const wet=target.progressive?await target.select("normal",mix,solo):target.signals.normal;
     return await player.load(dry,target.gain.applied,{...options,
       scrub:{wet,mode:next,mix,solo,calibration:$("wet-calibration").value},positions});
-  }else return await player.load(target.select(next,binding.value,$("solo").value),target.gain.applied,options);
+  }else return await player.load(await target.select(next,binding.value,$("solo").value),target.gain.applied,options);
 }
 async function choose(next){
   if(!session)return;
   if(next!==mode){cancelWindowRequests();if(mode==="ir-spectral")spectralWorker.cancel();}
   await audio();
+  const oldTimeline=activeTimeline??session.timeline;
+  const nextTimeline=session.progressive&&next==="reverse"?session.outputFor("reverse").timeline:session.timeline;
+  const currentTime=oldTimeline.timeAtFrame(player.state.position);
+  const frame=nextTimeline.clampFrame(nextTimeline.frameAtTime(currentTime));
   if((next!==mode||!isScrubMode(next)||!player.setMix(binding.value,$("solo").value))&&
-     !await loadMode(session,next))return;
+     !await loadMode(session,next,{frame}))return;
+  activeTimeline=nextTimeline;seek.max=String(activeTimeline.length);
   if(isScrubMode(next)){showAxes(player.state.axes);showCalibration(player.state.calibration);}
   mode=appliedMode=next;pendingWave=null;pendingWetWave=null;wave.refresh(true);
   wetWave.setSignal(isScrubMode(next)?player.state.wetSignal:null);
@@ -419,18 +426,15 @@ async function applyPreparation(job,next){
     const stoppedSinceRequest=explicitStopIntent;
     const wasRunning=!stoppedSinceRequest&&!!player?.state.running;
     const previousFrame=Math.round(player?.state.position??0);
-    let frame=sourceChanged||stoppedSinceRequest?0:previousFrame;
-    if(!sourceChanged&&!stoppedSinceRequest&&session&&next.sampleRate>0){
-      const sourceTime=session.timeline.timeAtFrame(previousFrame);
-      frame=next.timeline.clampFrame(next.timeline.frameAtTime(sourceTime));
-    }
+    const previousTime=!sourceChanged&&!stoppedSinceRequest&&session&&next.sampleRate>0?
+      (activeTimeline??session.timeline).timeAtFrame(previousFrame):0;
     await audio();
     if(job.revision!==preparationRevision)return;
     if(next.progressive&&next.processingRate!==ctx.sampleRate)
       next=next.withProcessingRate(ctx.sampleRate);
     const resume=wasRunning&&stopRevision===stopToken;
     let nextMode=mode,fallbackReason="";
-    if(next.progressive&&!['dry','normal','ir-window','wet-buffer'].includes(nextMode)){
+    if(next.progressive&&!['dry','normal','reverse','ir-window','wet-buffer'].includes(nextMode)){
       nextMode=job.predelay<0?"dry":"normal";
       fallbackReason=`長尺音源では${mode}が未対応のため${nextMode==="dry"?"Dry":"Normal"}へ切替`;
     }
@@ -438,6 +442,9 @@ async function applyPreparation(job,next){
       nextMode="dry";
       fallbackReason="長尺音源の負Predelayは先読み処理が未実装のためDryへ切替";
     }
+    const destinationTimeline=next.progressive&&nextMode==="reverse"?next.outputFor("reverse").timeline:next.timeline;
+    const frame=sourceChanged||stoppedSinceRequest?0:
+      destinationTimeline.clampFrame(destinationTimeline.frameAtTime(previousTime));
     let accepted=await loadMode(next,nextMode,{frame,resume,reset:true});
     if(!accepted&&stopRevision!==stopToken)
       accepted=await loadMode(next,nextMode,{frame:0,resume:false,reset:true});
@@ -445,9 +452,10 @@ async function applyPreparation(job,next){
     if(stopRevision!==stopToken)await player.stop();
     mode=appliedMode=nextMode;
     wetApplyRequested=false;clearTimeout(wetApplyTimer);wetApplyTimer=null;
-    const priorProgressive=session?.progressive?session.source:null;
+    const priorSession=session,priorProgressive=session?.progressive?session.source:null;
     const priorReader=activeSourceReader,waveSourceChanged=sourceChanged||activeWaveSource!==job.waveSource;
     session=next;appliedSourceKey=job.sourceKey;appliedSourceType=job.sourceType;savedAxes={};pendingWave=null;
+    if(priorSession&&priorSession!==next)priorSession.dispose?.();
     activeWaveSource=job.waveSource;
     activeSourceReader=job.sourceType==="file"&&typeof job.source?.read==="function"?job.source:null;
     if(queuedWindow?.mode==="ir-spectral")queuedWindow={...queuedWindow,settings:readSpectral()};
@@ -469,8 +477,8 @@ async function applyPreparation(job,next){
     showAxes(player.state.axes);showCalibration(player.state.calibration);
     wetWave.setSignal(isScrubMode(nextMode)?player.state.wetSignal:null);
     showWindow(next);if(!next.progressive)showSpectral(next,{reset:true});
-    message(fallbackReason?`準備済み: ${fallbackReason}。長尺逐次再生 / Dry・Normal・IR Window（他方式は未対応）`:
-      next.progressive?"準備済み: 長尺逐次再生 / Dry・Normal・IR Window・Wet Buffer":"準備済み: "+mode);status.dataset.prepared="true";
+    message(fallbackReason?`準備済み: ${fallbackReason}。長尺逐次再生 / Dry・Normal・Reverse・IR Window（他方式は未対応）`:
+      next.progressive?"準備済み: 長尺逐次再生 / Dry・Normal・Reverse・IR Window・Wet Buffer":"準備済み: "+mode);status.dataset.prepared="true";
   });
 }
 $("prepare").onclick=requestPreparation;
@@ -508,7 +516,7 @@ $("play").onclick=()=>{
   void run(async()=>{
     const intent=stopRevision;
     await audio();if(intent!==stopRevision)return;
-    if(!isScrubMode(mode)&&player.state.position>=session.length)await player.seek(0);
+    if(!isScrubMode(mode)&&player.state.position>=(activeTimeline??session.timeline).length)await player.seek(0);
     if(intent!==stopRevision)return;
     if(!await player.play())return;
     if(intent!==stopRevision){await player.stop();return;}

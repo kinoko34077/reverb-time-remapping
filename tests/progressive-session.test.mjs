@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {createProgressiveSession} from "../src/progressive-session.mjs";
+import {matchKernelSampleRate} from "../src/progressive-convolution.mjs";
 import {referenceConvolution,sampleAt} from "./helpers/time-reference.mjs";
 
 test("progressive Reverse reader renders signed output windows from bounded source reads",async()=>{
@@ -97,6 +98,29 @@ test("progressive Reverse timeline retains the full Dry source under long predel
       {priority:"playback"})).channels[0]);
   assert.deepEqual(Float32Array.from(negativeDry),input);
   negative.dispose();
+});
+
+test("progressive Reverse matches convolution amplitude to the shared processing clock",async()=>{
+  class OfflineContext{
+    constructor(channels,frames,sampleRate){this.channels=channels;this.frames=frames;this.sampleRate=sampleRate;this.destination={};}
+    createBuffer(){return {copyToChannel(){}};}
+    createBufferSource(){return {connect(){},start(){}};}
+    async startRendering(){return {getChannelData:()=>new Float32Array(this.frames).fill(.5)};}
+  }
+  const source={sourceFrames:8,channelCount:1,sampleRate:96_000,maxReadFrames:8,
+    async read(startFrame,frameCount){return {startFrame,channels:[new Float32Array(frameCount).fill(1)]};}};
+  const ir={origin:0,sampleRate:44_100,channels:[Float32Array.of(1)]};
+  let reverseKernel;
+  const session=createProgressiveSession(source,ir,{processingRate:48_000,
+    reverseReaderOptions:{Context:OfflineContext,windowFrames:4,maxReadFrames:8,
+      renderWindow:async request=>{reverseKernel=request.kernel;return [new Float32Array(request.frameCount)];}}});
+  const signal=await session.select("reverse",1,"wet");
+  await signal.source.read(0,1,{priority:"playback"});
+  const expected=await matchKernelSampleRate({sampleRate:48_000},ir,{Context:OfflineContext});
+  assert.equal(reverseKernel.sampleRate,source.sampleRate);
+  assert.ok(Math.abs(reverseKernel.channels[0][0]-expected.channels[0][0])<1e-6,
+    JSON.stringify({actual:reverseKernel.channels[0][0],expected:expected.channels[0][0]}));
+  session.dispose();
 });
 
 test("progressive IR Window slices the kernel without shortening the source timeline",async()=>{

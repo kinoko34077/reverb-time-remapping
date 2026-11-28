@@ -71,7 +71,8 @@ export function createProgressiveSession(source,ir,{predelay=0,
         throw new RangeError("無効な試聴比率");
       if(mode==="reverse"){
         let reader=outputReaders.get(mode);
-        if(!reader){reader=await createProgressiveReversePCMReader(source,kernel,outputFor(mode),reverseReaderOptions);outputReaders.set(mode,reader);}
+        if(!reader){reader=await createProgressiveReversePCMReader(source,kernel,outputFor(mode),
+          {...reverseReaderOptions,processingRate});outputReaders.set(mode,reader);}
         reader.setMix(mix,solo);
         return {source:reader,sourceFrames:reverseTimeline.length,wetOutputFrames:reverseTimeline.length,
           sampleRate,mode,output:outputFor(mode),ir:kernel,mix,solo,predelay};

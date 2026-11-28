@@ -11,16 +11,20 @@ function throwIfAborted(signal){
 // output timeline is independent from the Source reader's zero-based frames.
 export async function createProgressiveReversePCMReader(source,kernel,contract,{
   windowFrames=65_536,maxCachedWindows=2,maxReadFrames=source?.maxReadFrames??windowFrames*4,
-  Context=globalThis.OfflineAudioContext,renderWindow:renderOverride
+  Context=globalThis.OfflineAudioContext,processingRate=source?.sampleRate,renderWindow:renderOverride
 }={}){
   if(!source||typeof source.read!=="function"||!Number.isSafeInteger(source.sourceFrames)||source.sourceFrames<1||
      ![1,2].includes(source.channelCount)||!Number.isFinite(source.sampleRate)||source.sampleRate<=0||
+     !Number.isFinite(processingRate)||processingRate<=0||
      contract?.mode!=="reverse"||contract.timeline?.sampleRate!==source.sampleRate||
      contract.sourceFrames!==source.sourceFrames)
     throw new RangeError("長尺Reverse readerの入力契約が不正です");
   const ir=validatePCM(kernel);
   if(ir.origin!==0)throw new RangeError("IRは0始点である必要があります");
-  const matched=await matchKernelSampleRate({sampleRate:source.sampleRate},ir,{Context});
+  const resampled=await matchKernelSampleRate({sampleRate:source.sampleRate},ir,{Context});
+  const amplitudeScale=processingRate/source.sampleRate;
+  const matched={origin:0,sampleRate:source.sampleRate,
+    channels:resampled.channels.map(channel=>Float32Array.from(channel,sample=>sample*amplitudeScale))};
   const kernelFrames=matched.channels[0].length;
   if(contract.irFrames!==kernelFrames)throw new RangeError("Reverse IRと出力契約のframe数が一致しません");
   const reversed={origin:0,sampleRate:matched.sampleRate,

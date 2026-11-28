@@ -5,10 +5,18 @@ import {createPlayerWaveEditor} from "../shared/atf/player-wave-editor.mjs";
 export function createIRWaveView({getWindow,onStart,onEdge,canEdit}){
   const $=id=>document.getElementById(id);
   const canvas=$("ir-wave-detail"),wrap=$("ir-wave-detail-wrap");
-  let ir=null,closed=false,viewportFrame=null,anchorRefreshPending=false;
+  let ir=null,closed=false,viewportFrame=null,anchorRefreshPending=false,
+    lastRangeKey=null,visualRelocation=false;
+  canvas.addEventListener("wheel",event=>{
+    if(!event.ctrlKey&&!event.metaKey)return;
+    visualRelocation=true;
+    queueMicrotask(()=>{visualRelocation=false;});
+  },true);
   function reanchor(range){
     const next=range.start+(range.end-range.start)/2;
-    if(viewportFrame!==null&&Math.abs(next-viewportFrame)<.5)return;
+    const key=range.start+":"+range.end;
+    if(lastRangeKey===key)return;
+    lastRangeKey=key;
     viewportFrame=next;
     if(anchorRefreshPending)return;
     anchorRefreshPending=true;
@@ -25,7 +33,11 @@ export function createIRWaveView({getWindow,onStart,onEdge,canEdit}){
     // anchor. Keep that anchor fixed during an endpoint gesture so moving A
     // does not shift the coordinate system under the pointer.
     getPosition:()=>ir?(viewportFrame??getWindow().start)/ir.sampleRate:0,
-    onPosition:seconds=>{if(!closed&&ir&&canEdit())onStart(seconds);},
+    onPosition:seconds=>{
+      if(closed||!ir)return;
+      if(visualRelocation){viewportFrame=Math.round(seconds*ir.sampleRate);return;}
+      if(canEdit())onStart(seconds);
+    },
     onStart:()=>{},onScrubMotion:()=>{},onScrubState:()=>{},
     onAB:(edge,frame)=>{
       if(!edge&&ir&&!wrap.dataset.interaction){
@@ -42,8 +54,11 @@ export function createIRWaveView({getWindow,onStart,onEdge,canEdit}){
     setIR(value){
       if(closed)return;
       ir=value&&Array.isArray(value.channels)&&value.channels.length?value:null;
-      if(ir){const range=getWindow();viewportFrame=range.start+(range.end-range.start)/2;}
-      else viewportFrame=null;
+      if(ir){
+        const range=getWindow();
+        viewportFrame=range.start+(range.end-range.start)/2;
+        lastRangeKey=range.start+":"+range.end;
+      }else{viewportFrame=null;lastRangeKey=null;}
       editor.setSource(ir?.channels??null,ir?.sampleRate??48000);
       editor.refresh(true);
     },

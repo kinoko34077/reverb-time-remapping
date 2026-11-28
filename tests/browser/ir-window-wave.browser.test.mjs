@@ -113,6 +113,18 @@ test("IR window endpoints are directly editable on the real IR waveform",async()
     })));
     const afterWheel=Number(await page.$eval("#ir-window-start",element=>element.value));
     assert.ok(afterWheel>0&&afterWheel<20,JSON.stringify({afterWheel}));
+    const beforeZoom=await page.evaluate(()=>({
+      start:Number(document.querySelector("#ir-window-start").value),
+      length:Number(document.querySelector("#ir-window-length").value)
+    }));
+    await canvas.evaluate(element=>element.dispatchEvent(new WheelEvent("wheel",{
+      deltaY:-100,ctrlKey:true,bubbles:true,cancelable:true
+    })));
+    const afterZoom=await page.evaluate(()=>({
+      start:Number(document.querySelector("#ir-window-start").value),
+      length:Number(document.querySelector("#ir-window-length").value)
+    }));
+    assert.deepEqual(afterZoom,beforeZoom);
     assert.deepEqual(errors,[]);
   }finally{await cleanupTestProcesses(browser,[server]);}
 });

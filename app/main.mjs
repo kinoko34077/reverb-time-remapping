@@ -256,9 +256,10 @@ function controls(){
 }
 function syncComparisonRange(next,{reset=false}={}){
   seek.max=String(next.timeline.length);
-  const a=next.timeline.timeAtFrame(0),b=next.timeline.timeAtFrame(next.timeline.length);
+  const a=next.timeline.timeAtFrame(0);
   for(const name of ["source","wet"]){
     const frames=name==="wet"&&next.progressive?next.wetOutputFrames:next.length;
+    const b=next.timeline.timeAtFrame(frames);
     $(name+"-seek").max=String(frames-1);
     for(const suffix of ["range-start","range-end"]){
       $(name+"-"+suffix).min=String(a);$(name+"-"+suffix).max=String(b);

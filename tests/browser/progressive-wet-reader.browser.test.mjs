@@ -30,8 +30,27 @@ test("progressive Wet reader matches convolution while retaining a bounded PCM c
       const delayed=await createProgressiveWetPCMReader(source,{origin:0,sampleRate,channels:[ir]},
         {predelaySeconds:.002,windowFrames:64,maxCachedWindows:2,maxReadFrames:256});
       const d=await delayed.read(64,64);
+      let releaseEntered,readCalls=0;const entered=new Promise(resolve=>releaseEntered=resolve),releases=[];
+      const slowSource={sourceFrames:256,channelCount:1,sampleRate,windowFrames:64,maxReadFrames:64,
+        async read(startFrame,frameCount){
+          readCalls++;if(readCalls===2)releaseEntered();
+          await new Promise(resolve=>releases.push(resolve));
+          return {startFrame,channels:[new Float32Array(frameCount)]};
+        }};
+      const cancellable=await createProgressiveWetPCMReader(slowSource,{origin:0,sampleRate,channels:[Float32Array.of(1)]},
+        {windowFrames:64,maxCachedWindows:2,maxReadFrames:256});
+      const lowA=cancellable.read(0,64,{priority:"background"});
+      const lowB=cancellable.read(64,64,{priority:"background"});
+      await entered;
+      const urgent=cancellable.read(128,64,{priority:"scrub"});
+      releases.splice(0).forEach(resolve=>resolve());
+      for(let i=0;i<50&&readCalls<3;i++)await new Promise(resolve=>setTimeout(resolve,0));
+      releases.splice(0).forEach(resolve=>resolve());
+      const cancellation=await Promise.allSettled([lowA,lowB,urgent]);
       return {sampleRate,a:Array.from(a.channels[0]),b:Array.from(b.channels[0]),c:Array.from(c.channels[0]),
-        d:Array.from(d.channels[0]),stats:reader.stats(),delayedStats:delayed.stats(),channels:reader.channelCount};
+        d:Array.from(d.channels[0]),stats:reader.stats(),delayedStats:delayed.stats(),channels:reader.channelCount,
+        cancelled:cancellation.filter(item=>item.status==="rejected").map(item=>({name:item.reason.name,message:item.reason.message})),
+        urgent:cancellation[2].status,readCalls};
     });
     const reference=referenceConvolution(Float32Array.from({length:512},(_,i)=>i%71===0?Math.sin(i):0),
       Float32Array.from({length:41},(_,i)=>Math.exp(-i/10)*Math.cos(i*.31)));
@@ -44,6 +63,9 @@ test("progressive Wet reader matches convolution while retaining a bounded PCM c
     for(let i=0;i<result.d.length;i++)assert.ok(Math.abs(result.d[i]-delayedReference.samples[64+i])<2e-4,
       `predelayed sample ${64+i}: ${result.d[i]} != ${delayedReference.samples[64+i]}`);
     assert.equal(result.channels,1);
+    assert.equal(result.urgent,"fulfilled",JSON.stringify(result));
+    assert.ok(result.cancelled.some(error=>error.name==="AbortError"&&error.message==="PCM window decode aborted"),
+      JSON.stringify(result));
     assert.ok(result.stats.residentFrames<=128,JSON.stringify(result.stats));
     assert.ok(result.stats.residentWindows<=2,JSON.stringify(result.stats));
     assert.ok(result.delayedStats.residentFrames<=128,JSON.stringify(result.delayedStats));

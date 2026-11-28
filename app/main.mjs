@@ -392,7 +392,7 @@ async function applyPreparation(job,next){
       nextMode=job.predelay<0?"dry":"normal";
       fallbackReason=`長尺音源では${mode}が未対応のため${nextMode==="dry"?"Dry":"Normal"}へ切替`;
     }
-    if(next.progressive&&job.predelay<0&&["normal","ir-window"].includes(nextMode)){
+    if(next.progressive&&job.predelay<0&&["normal","ir-window","wet-buffer"].includes(nextMode)){
       nextMode="dry";
       fallbackReason="長尺音源の負Predelayは先読み処理が未実装のためDryへ切替";
     }

@@ -2,6 +2,14 @@ import {createProgressivePCMCache} from "../shared/atf/progressive-source-cache.
 import {createLiveConvolutionGraph} from "./live-convolution.mjs";
 import {validatePCM} from "./convolution.mjs";
 
+function throwIfAborted(signal){
+  if(signal?.aborted){
+    const error=Error("PCM window decode aborted");
+    error.name="AbortError";
+    throw error;
+  }
+}
+
 async function matchKernelRate(Context,sourceRate,kernel){
   if(kernel.sampleRate===sourceRate)return kernel;
   if(typeof Context!=="function")throw Error("IRのサンプルレート変換が利用できません");
@@ -33,7 +41,7 @@ export async function createProgressiveWetPCMReader(source,kernel,{predelaySecon
   const delayFrames=Math.round(predelaySeconds*source.sampleRate);
 
   async function renderWindow(start,length,{signal:abortSignal}={}){
-    if(abortSignal?.aborted)throw Error("Wet参照の計算を中断しました");
+    throwIfAborted(abortSignal);
     const result=Array.from({length:channels},()=>new Float32Array(length));
     const inputStart=Math.max(0,start-delayFrames-(matched.channels[0].length-1));
     const inputEnd=Math.min(source.sourceFrames,start+length-delayFrames);
@@ -49,7 +57,7 @@ export async function createProgressiveWetPCMReader(source,kernel,{predelaySecon
       read.channels.forEach((channel,index)=>inputChannels[index].set(channel,offset));
       offset+=count;
     }
-    if(abortSignal?.aborted)throw Error("Wet参照の計算を中断しました");
+    throwIfAborted(abortSignal);
     const renderFrames=inputChannels[0].length+matched.channels[0].length-1+delayFrames;
     if(!Number.isSafeInteger(renderFrames)||renderFrames<1)throw RangeError("Wet参照の計算範囲が不正です");
     const offline=new Context(channels,renderFrames,source.sampleRate);
@@ -60,7 +68,7 @@ export async function createProgressiveWetPCMReader(source,kernel,{predelaySecon
     const node=offline.createBufferSource();node.buffer=input;node.connect(graph.input);graph.output.connect(offline.destination);node.start();
     try{
       const rendered=await offline.startRendering();
-      if(abortSignal?.aborted)throw Error("Wet参照の計算を中断しました");
+      throwIfAborted(abortSignal);
       const offset=start-inputStart;
       for(let channel=0;channel<channels;channel++){
         const data=rendered.getChannelData(channel);

@@ -119,6 +119,10 @@ test("three-minute stereo MP3 remains seekable, restores Normal from unsupported
     assert.ok(Number(playback.renderedFrames)>256,JSON.stringify(playback));
     await page.click("#stop");
     await page.waitForFunction(()=>Number(document.querySelector("#seek").value)===0);
+    await page.$eval("#predelay",element=>{element.value="-10";element.dispatchEvent(new Event("change"));});
+    await page.waitForFunction(()=>document.querySelector("#status").textContent.startsWith("準備済み:")&&
+      document.querySelector("#status").textContent.includes("負Predelay"),{timeout:30000});
+    assert.equal(await page.$eval('[data-mode="dry"]',button=>button.getAttribute("aria-pressed")),"true");
     assert.deepEqual(errors,[]);
   }finally{await cleanupTestProcesses(browser,[server]);}
 });

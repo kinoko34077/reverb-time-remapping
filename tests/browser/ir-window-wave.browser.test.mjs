@@ -108,9 +108,9 @@ test("IR window endpoints are directly editable on the real IR waveform",async()
     await page.$eval("#ir-window-length",element=>{element.value="140";element.dispatchEvent(new Event("change",{bubbles:true}));});
     await page.waitForFunction(()=>document.querySelector("#window-range").textContent.includes("適用IR窓: 0.000")&&
       !document.querySelector("#play").disabled,{timeout:4000});
-    await canvas.evaluate(element=>element.dispatchEvent(new WheelEvent("wheel",{
-      deltaY:10,bubbles:true,cancelable:true
-    })));
+    const wheelRect=await canvas.boundingBox();
+    await page.mouse.move(wheelRect.x+wheelRect.width*.8,wheelRect.y+wheelRect.height/2);
+    await page.mouse.wheel({deltaY:10});
     const afterWheel=Number(await page.$eval("#ir-window-start",element=>element.value));
     assert.ok(afterWheel>0&&afterWheel<20,JSON.stringify({afterWheel}));
     const beforeZoom=await page.evaluate(()=>({
@@ -127,6 +127,10 @@ test("IR window endpoints are directly editable on the real IR waveform",async()
       length:Number(document.querySelector("#ir-window-length").value)
     }));
     assert.deepEqual(afterZoom,beforeZoom);
+    await page.mouse.wheel({deltaY:-1});
+    const afterNavigation=Number(await page.$eval("#ir-window-start",element=>element.value));
+    assert.ok(afterNavigation>=0&&afterNavigation<beforeZoom.start,
+      JSON.stringify({beforeZoom,afterNavigation}));
     assert.deepEqual(errors,[]);
   }finally{await cleanupTestProcesses(browser,[server]);}
 });

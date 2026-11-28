@@ -34,8 +34,14 @@ export function createIRWaveView({getWindow,onStart,onEdge,canEdit}){
     getPosition:()=>ir?(viewportFrame??getWindow().start)/ir.sampleRate:0,
     onPosition:seconds=>{
       if(closed||!ir)return;
-      if(visualRelocation){viewportFrame=Math.round(seconds*ir.sampleRate);return;}
-      if(canEdit())onStart(seconds);
+      const requested=Math.round(seconds*ir.sampleRate);
+      if(visualRelocation){viewportFrame=requested;return;}
+      if(!canEdit())return;
+      const range=getWindow();
+      const midpoint=range.start+(range.end-range.start)/2;
+      const delta=requested-(viewportFrame??midpoint);
+      viewportFrame=requested;
+      onStart((midpoint+delta)/ir.sampleRate);
     },
     onStart:()=>{},onScrubMotion:()=>{},onScrubState:()=>{},
     onAB:(edge,frame)=>{

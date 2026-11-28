@@ -226,9 +226,20 @@ function showCalibration(value){
     "Wet補正目標 ×"+value.targetScale.toFixed(3):"Wet自然減衰 ×1";
 }
 function message(s){status.textContent=s;}
+const abModes={a:"dry",b:"normal"};
 function controls(){
   for(const id of ["source","source-file","ir","ir-file","frequency","ir-length","predelay","ir-window-start","ir-window-length","ir-calibration","prepare","wet","solo"])$(id).disabled=busy;
   for(const b of document.querySelectorAll("[data-mode]")){b.disabled=busy||!session||(session.progressive&&!['dry','normal','ir-window','wet-buffer'].includes(b.dataset.mode));b.setAttribute("aria-pressed",String(b.dataset.mode===appliedMode));}
+  const available=mode=>!!session&&(!session.progressive||["dry","normal","ir-window","wet-buffer"].includes(mode));
+  for(const slot of ["a","b"]){
+    const other=slot==="a"?"b":"a",select=$("ab-"+slot+"-mode"),button=$("ab-listen-"+slot);
+    select.disabled=busy;
+    for(const option of select.options)option.disabled=(session?.progressive&&!available(option.value))||option.value===abModes[other];
+    button.disabled=busy||!available(abModes[slot]);
+    button.setAttribute("aria-pressed",String(!!session&&appliedMode===abModes[slot]));
+  }
+  const describe=mode=>document.querySelector(`[data-mode="${mode}"]`)?.textContent.trim()??mode;
+  $("ab-state").textContent=`${session?`現在 ${describe(appliedMode)}`:"未準備"} / A: ${describe(abModes.a)} / B: ${describe(abModes.b)}`;
   $("play").disabled=busy||!session||stopping;
   for(const id of ["pause","seek"])$(id).disabled=busy||!session;
   $("stop").disabled=!session;
@@ -280,6 +291,19 @@ async function audio(){
   await ctx.resume();
 }
 const binding=createWetMixBinding();
+for(const slot of ["a","b"]){
+  const select=$("ab-"+slot+"-mode");
+  for(const button of document.querySelectorAll("[data-mode]")){
+    const option=document.createElement("option");option.value=button.dataset.mode;option.textContent=button.textContent.trim();select.add(option);
+  }
+  select.value=abModes[slot];
+  select.onchange=()=>{
+    const other=slot==="a"?"b":"a",otherSelect=$("ab-"+other+"-mode"),previous=abModes[slot];
+    if(select.value===abModes[other])otherSelect.value=previous;
+    abModes[slot]=select.value;abModes[other]=otherSelect.value;controls();
+  };
+  $("ab-listen-"+slot).onclick=()=>run(()=>choose(abModes[slot]));
+}
 let wetApplyRequested=false;
 function scheduleWetApply(){
   if(!session)return;

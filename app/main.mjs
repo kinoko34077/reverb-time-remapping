@@ -32,11 +32,11 @@ const wave=createSourceWaveView({
 const irWave=createIRWaveView({
   getWindow:irWaveRange,
   canEdit:()=>!!session&&(!busy||windowApplying)&&appliedMode==="ir-window",
-  onStart:seconds=>{
+  onStart:deltaSeconds=>{
     const rate=session?.irSampleRate??session?.ir?.sampleRate??48000;
     const frames=session?.irFrames??session?.ir?.channels?.[0]?.length??0;
-    const length=Math.max(1,Math.min(frames,Math.round(Number($("ir-window-length").value||1)*rate/1000)));
-    const start=Math.max(0,Math.min(Math.max(0,frames-length),Math.round(seconds*rate-length/2)));
+    const current=Math.round(readNumber("ir-window-start")*rate/1000);
+    const start=Math.max(0,Math.min(Math.max(0,frames-1),current+Math.round(deltaSeconds*rate)));
     $("ir-window-start").value=String(start*1000/rate);
     requestWindow();
   },

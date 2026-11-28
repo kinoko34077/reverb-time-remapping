@@ -41,7 +41,7 @@ export function createIRWaveView({getWindow,onStart,onEdge,canEdit}){
       const midpoint=range.start+(range.end-range.start)/2;
       const delta=requested-(viewportFrame??midpoint);
       viewportFrame=requested;
-      onStart((midpoint+delta)/ir.sampleRate);
+      onStart(delta/ir.sampleRate);
     },
     onStart:()=>{},onScrubMotion:()=>{},onScrubState:()=>{},
     onAB:(edge,frame)=>{

@@ -131,6 +131,16 @@ test("IR window endpoints are directly editable on the real IR waveform",async()
     const afterNavigation=Number(await page.$eval("#ir-window-start",element=>element.value));
     assert.ok(afterNavigation>=0&&afterNavigation<beforeZoom.start,
       JSON.stringify({beforeZoom,afterNavigation}));
+    await page.$eval("#ir-window-start",element=>{element.value="150";element.dispatchEvent(new Event("change",{bubbles:true}));});
+    await page.$eval("#ir-window-length",element=>{element.value="100";element.dispatchEvent(new Event("change",{bubbles:true}));});
+    await page.waitForFunction(()=>{
+      const range=document.querySelector("#window-range").textContent.match(/適用IR窓:\s*([\d.]+)\s*–\s*([\d.]+)/);
+      return !!range&&Number(range[1])>=149&&Number(range[2])>=199&&!document.querySelector("#play").disabled;
+    },{timeout:4000});
+    await page.mouse.wheel({deltaY:10});
+    const afterTruncatedNavigation=Number(await page.$eval("#ir-window-start",element=>element.value));
+    assert.ok(afterTruncatedNavigation>150&&afterTruncatedNavigation<170,
+      JSON.stringify({afterTruncatedNavigation}));
     assert.deepEqual(errors,[]);
   }finally{await cleanupTestProcesses(browser,[server]);}
 });

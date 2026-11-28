@@ -108,19 +108,28 @@ export function createPreviewPlayer(ctx,{onState=()=>{},createBridge=createSourc
         if(target<length){
           await next.seek(target);
           if(stale())return abandon();
-          // Freeze the old source clock before the potentially slow history read.
-          // The accepted pause frame is the replacement's true handoff position.
-          const paused=await current.pause();
-          if(stale())return abandon();
-          target=Math.min(length,Math.max(0,Math.round(paused?.sourceFrame??position)));
-          if(target!==estimated)await next.seek(target);
-          nextHistory=await prepareHistory(target);
+          const live=current.latest;
+          const alignedStart=live?.running&&!live.ended&&Number.isFinite(live.outputTime)?
+            Math.min(length,Math.max(0,Math.round(live.sourceFrame+
+              Math.max(0,ctx.currentTime-live.outputTime)*signal.sampleRate))):target;
+          if(alignedStart!==target)await next.seek(alignedStart);
           if(stale())return abandon();
           readyEvent=null;lastReadyEvent=null;
           await next.play();
-           if(!readyEvent)readyEvent=await waitForRender();
+          if(!readyEvent)readyEvent=await waitForRender();
           if(stale())return abandon();
-          startHistory(nextHistory,nextRoute,readyEvent.outputTime);
+          nextHistory=await prepareHistory(alignedStart);
+          if(stale())return abandon();
+          if(nextHistory){
+            const liveNext=next.latest;
+            const liveNextFrame=liveNext?.running&&!liveNext.ended&&Number.isFinite(liveNext.outputTime)?
+              liveNext.sourceFrame+Math.max(0,ctx.currentTime-liveNext.outputTime)*signal.sampleRate:
+              liveNext?.sourceFrame??alignedStart;
+            const advancedFrames=Math.max(0,liveNextFrame-alignedStart);
+            nextHistory.offset=Math.min(nextHistory.buffer.duration,
+              advancedFrames*ctx.sampleRate/signal.sampleRate);
+          }
+          startHistory(nextHistory,nextRoute,ctx.currentTime);
           const previous={bridge:current,node:route,graph:currentGraph,history:currentHistory};
           retiring.add(previous);
           const now=ctx.currentTime,end=now+.025;
@@ -128,7 +137,11 @@ export function createPreviewPlayer(ctx,{onState=()=>{},createBridge=createSourc
           route.gain.linearRampToValueAtTime(0,end);
           nextRoute.gain.setValueAtTime(0,now);nextRoute.gain.linearRampToValueAtTime(appliedGain,end);
           current=next;route=nextRoute;currentGraph=nextGraph;currentHistory=nextHistory;
-          currentSignal=signal;currentGain=appliedGain;position=readyEvent.sourceFrame;running=true;
+          const handoff=next.latest;
+          position=handoff?.running&&!handoff.ended&&Number.isFinite(handoff.outputTime)?
+            handoff.sourceFrame+Math.max(0,ctx.currentTime-handoff.outputTime)*signal.sampleRate:
+            readyEvent.sourceFrame;
+          currentSignal=signal;currentGain=appliedGain;running=true;
           report({phase:"crossfade",event:readyEvent});
           await new Promise(resolve=>setTimeout(resolve,40));
           release(previous.bridge,previous.node,previous.graph,previous.history);retiring.delete(previous);

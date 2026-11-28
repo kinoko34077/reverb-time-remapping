@@ -39,6 +39,9 @@ export async function createProgressiveWetPCMReader(source,kernel,{predelaySecon
   const matched=await matchKernelRate(Context,source.sampleRate,ir);
   const channels=Math.max(source.channelCount,matched.channels.length);
   const delayFrames=Math.round(predelaySeconds*source.sampleRate);
+  const outputFrames=source.sourceFrames+matched.channels[0].length-1+delayFrames;
+  if(!Number.isSafeInteger(outputFrames)||outputFrames<source.sourceFrames)
+    throw new RangeError("Wet参照の出力範囲が不正です");
 
   async function renderWindow(start,length,{signal:abortSignal}={}){
     throwIfAborted(abortSignal);
@@ -82,9 +85,9 @@ export async function createProgressiveWetPCMReader(source,kernel,{predelaySecon
     }finally{graph.dispose();node.disconnect();}
   }
 
-  const cache=createProgressivePCMCache({sourceFrames:source.sourceFrames,channelCount:channels,
+  const cache=createProgressivePCMCache({sourceFrames:outputFrames,channelCount:channels,
     windowFrames,maxCachedWindows,maxReadFrames,decodeWindow:renderWindow});
-  return Object.freeze({sourceFrames:source.sourceFrames,channelCount:channels,
+  return Object.freeze({sourceFrames:outputFrames,channelCount:channels,
     sampleRate:source.sampleRate,windowFrames,maxReadFrames,
     read:(startFrame,frameCount,options)=>cache.read(startFrame,frameCount,options),
     stats:()=>cache.stats(),dispose:()=>cache.dispose()});

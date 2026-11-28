@@ -25,6 +25,9 @@ export function createProgressiveSession(source,ir,{predelay=0,
   if(kernel.origin!==0||!Number.isFinite(predelay)||!Number.isFinite(processingRate)||processingRate<=0)
     throw new RangeError("IRまたはPredelayが不正です");
   const window=extractIRWindow(kernel,irWindowSettings);
+  const delayFrames=Math.round(Math.max(0,predelay)*source.sampleRate);
+  const irFramesAtSourceRate=Math.max(1,Math.round(kernel.channels[0].length*source.sampleRate/kernel.sampleRate));
+  const wetOutputFrames=source.sourceFrames+delayFrames+irFramesAtSourceRate-1;
   // Normalized decoded PCM is bounded by one. The shared native preview gain
   // also caps at 0.25; L1 bounds convolution without decoding the whole source.
   const rateScale=processingRate/kernel.sampleRate;
@@ -35,7 +38,7 @@ export function createProgressiveSession(source,ir,{predelay=0,
   const length=source.sourceFrames,sampleRate=source.sampleRate;
   return Object.freeze({
     progressive:true,source,ir:kernel,length,sampleRate,processingRate,
-    interval:{start:0,end:length},irFrames:kernel.channels[0].length,irSampleRate:kernel.sampleRate,
+    interval:{start:0,end:length},wetOutputFrames,irFrames:kernel.channels[0].length,irSampleRate:kernel.sampleRate,
     irWindow:window.range,irCalibration:window.calibration,irScale:window.scale,
     gain,
     async withIRWindow(settings){return createProgressiveSession(source,kernel,{predelay,irWindowSettings:settings,processingRate});},
@@ -44,7 +47,8 @@ export function createProgressiveSession(source,ir,{predelay=0,
       if(!PROGRESSIVE_MODES.has(mode))throw Error("この長尺音源ではDry/Normal以外の比較準備は未対応です");
       if(!Number.isFinite(mix)||mix<0||mix>1||!["mix","dry","wet"].includes(solo))
         throw new RangeError("無効な試聴比率");
-      return {source,sourceFrames:length,sampleRate,mode,ir:mode==="ir-window"?window:kernel,mix,solo,predelay};
+      return {source,sourceFrames:length,wetOutputFrames,sampleRate,mode,
+        ir:mode==="ir-window"?window:kernel,mix,solo,predelay};
     }
   });
 }

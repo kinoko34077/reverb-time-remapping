@@ -229,9 +229,11 @@ function controls(){
 }
 function syncComparisonRange(next,{reset=false}={}){
   seek.max=String(next.length);
-  const a=next.interval.start/next.sampleRate,b=next.interval.end/next.sampleRate;
+  const a=next.interval.start/next.sampleRate;
   for(const name of ["source","wet"]){
-    $(name+"-seek").max=String(next.length-1);
+    const frames=name==="wet"&&next.progressive?next.wetOutputFrames:next.length;
+    const b=(next.interval.start+frames)/next.sampleRate;
+    $(name+"-seek").max=String(frames-1);
     for(const suffix of ["range-start","range-end"]){
       $(name+"-"+suffix).min=String(a);$(name+"-"+suffix).max=String(b);
     }

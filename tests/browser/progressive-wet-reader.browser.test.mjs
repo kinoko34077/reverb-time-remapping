@@ -27,9 +27,11 @@ test("progressive Wet reader matches convolution while retaining a bounded PCM c
       const reader=await createProgressiveWetPCMReader(source,{origin:0,sampleRate,channels:[ir]},
         {windowFrames:64,maxCachedWindows:2,maxReadFrames:256});
       const a=await reader.read(0,64),b=await reader.read(64,64),c=await reader.read(320,64);
+      const tail=await reader.read(512,40);
       const delayed=await createProgressiveWetPCMReader(source,{origin:0,sampleRate,channels:[ir]},
         {predelaySeconds:.002,windowFrames:64,maxCachedWindows:2,maxReadFrames:256});
       const d=await delayed.read(64,64);
+      const delayedTail=await delayed.read(600,48);
       let releaseEntered,readCalls=0;const entered=new Promise(resolve=>releaseEntered=resolve),releases=[];
       const slowSource={sourceFrames:256,channelCount:1,sampleRate,windowFrames:64,maxReadFrames:64,
         async read(startFrame,frameCount){
@@ -48,7 +50,9 @@ test("progressive Wet reader matches convolution while retaining a bounded PCM c
       releases.splice(0).forEach(resolve=>resolve());
       const cancellation=await Promise.allSettled([lowA,lowB,urgent]);
       return {sampleRate,a:Array.from(a.channels[0]),b:Array.from(b.channels[0]),c:Array.from(c.channels[0]),
-        d:Array.from(d.channels[0]),stats:reader.stats(),delayedStats:delayed.stats(),channels:reader.channelCount,
+        tail:Array.from(tail.channels[0]),d:Array.from(d.channels[0]),delayedTail:Array.from(delayedTail.channels[0]),
+        outputFrames:reader.sourceFrames,delayedOutputFrames:delayed.sourceFrames,
+        stats:reader.stats(),delayedStats:delayed.stats(),channels:reader.channelCount,
         cancelled:cancellation.filter(item=>item.status==="rejected").map(item=>({name:item.reason.name,message:item.reason.message})),
         urgent:cancellation[2].status,readCalls};
     });
@@ -62,6 +66,12 @@ test("progressive Wet reader matches convolution while retaining a bounded PCM c
     const delayedReference=referenceConvolution(Float32Array.from({length:512},(_,i)=>i%71===0?Math.sin(i):0),delayedKernel);
     for(let i=0;i<result.d.length;i++)assert.ok(Math.abs(result.d[i]-delayedReference.samples[64+i])<2e-4,
       `predelayed sample ${64+i}: ${result.d[i]} != ${delayedReference.samples[64+i]}`);
+    assert.equal(result.outputFrames,552);
+    assert.equal(result.delayedOutputFrames,648);
+    for(let i=0;i<result.tail.length;i++)assert.ok(Math.abs(result.tail[i]-reference.samples[512+i])<2e-4,
+      `tail sample ${512+i}: ${result.tail[i]} != ${reference.samples[512+i]}`);
+    for(let i=0;i<result.delayedTail.length;i++)assert.ok(Math.abs(result.delayedTail[i]-delayedReference.samples[600+i])<2e-4,
+      `predelayed tail sample ${600+i}: ${result.delayedTail[i]} != ${delayedReference.samples[600+i]}`);
     assert.equal(result.channels,1);
     assert.equal(result.urgent,"fulfilled",JSON.stringify(result));
     assert.ok(result.cancelled.some(error=>error.name==="AbortError"&&error.message==="PCM window decode aborted"),

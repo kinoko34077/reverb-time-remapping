@@ -1,5 +1,33 @@
 import {createPlayerWaveEditor} from "../shared/atf/player-wave-editor.mjs";
 
+export async function readWetOverviewPeak(reader,start,end,{isCurrent=()=>true}={}){
+  const maxRead=Number.isSafeInteger(reader?.maxReadFrames)&&reader.maxReadFrames>0?
+    reader.maxReadFrames:32_768;
+  const windowFrames=Number.isSafeInteger(reader?.windowFrames)&&reader.windowFrames>0?
+    Math.min(reader.windowFrames,maxRead):maxRead;
+  if(!reader||typeof reader.read!=="function"||!Number.isSafeInteger(start)||
+     !Number.isSafeInteger(end)||!Number.isSafeInteger(reader.sourceFrames)||reader.sourceFrames<1||
+     start<0||end<=start||end>reader.sourceFrames||
+     typeof isCurrent!=="function")throw new RangeError("Wet overview range is invalid");
+  let low=1,high=-1;
+  for(let offset=start;offset<end;){
+    if(!isCurrent())return null;
+    const count=Math.min(windowFrames,end-offset);
+    const range=await reader.read(offset,count,{priority:"waveform"});
+    if(!isCurrent())return null;
+    if(range?.startFrame!==offset||!Array.isArray(range.channels)||!range.channels.length||
+       !range.channels.every(channel=>channel instanceof Float32Array&&channel.length===count))
+      throw Error("Wet overview reader returned an invalid PCM range");
+    for(const channel of range.channels)for(const sample of channel){
+      if(!Number.isFinite(sample))throw RangeError("Wet overview contains invalid PCM");
+      if(sample<low)low=sample;
+      if(sample>high)high=sample;
+    }
+    offset+=count;
+  }
+  return low===1&&high===-1?[0,0]:[low,high];
+}
+
 // The waveform reads the same bounded Wet source used by playback. Wet frame
 // zero is its own output origin and may extend past the Source's final frame.
 export function createWetWaveView({getFrame,onSeek}){
@@ -54,17 +82,10 @@ export function createWetWaveView({getFrame,onSeek}){
         const start=Math.floor(index*frames/OVERVIEW_BINS);
         const end=Math.min(frames,Math.floor((index+1)*frames/OVERVIEW_BINS));
         if(end<=start)continue;
-        const range=await reader.read(start,end-start,{priority:"waveform"});
-        if(closed||revision!==overviewRevision||identity!==signalIdentity||!wideView())return;
-        if(range?.startFrame!==start||!Array.isArray(range.channels)||!range.channels.length||
-           !range.channels.every(channel=>channel instanceof Float32Array&&channel.length===end-start))
-          throw Error("Wet overview reader returned an invalid PCM range");
-        let low=1,high=-1;
-        for(const channel of range.channels)for(const sample of channel){
-          if(sample<low)low=sample;
-          if(sample>high)high=sample;
-        }
-        peaks[index]=low===1&&high===-1?[0,0]:[low,high];
+        const peak=await readWetOverviewPeak(reader,start,end,{isCurrent:()=>
+          !closed&&revision===overviewRevision&&identity===signalIdentity&&wideView()});
+        if(!peak)return;
+        peaks[index]=peak;
         overviewReady++;
         canvas.dataset.overviewBinsReady=String(overviewReady);
         editor.refreshOverview(start,end,index);

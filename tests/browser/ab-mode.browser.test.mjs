@@ -31,6 +31,15 @@ test("A/B selects switch the existing modes without changing comparison settings
     assert.equal(await page.$eval("#wet",element=>element.value),mix);
     assert.equal(await page.$eval("#source",element=>element.value),"sine");
 
+    await page.click("#play");
+    await page.waitForFunction(()=>Number.parseFloat(document.querySelector("#time").textContent)>0.05);
+    const beforeSwitch=await page.$eval("#time",element=>Number.parseFloat(element.textContent));
+    await page.click("#ab-listen-a");
+    await page.waitForFunction(()=>document.querySelector('[data-mode="dry"]').getAttribute("aria-pressed")==="true");
+    await page.waitForFunction(previous=>Number.parseFloat(document.querySelector("#time").textContent)>previous,{timeout:3000},beforeSwitch);
+    assert.equal(await page.$eval("#wet",element=>element.value),mix);
+    assert.equal(await page.$eval("#source",element=>element.value),"sine");
+
     await page.focus("#ab-a-mode");await page.keyboard.press("ArrowDown");await page.keyboard.press("Enter");
     assert.equal(await page.$eval("#ab-a-mode",element=>element.value),"reverse");
     await page.focus("#ab-listen-a");await page.keyboard.press("Enter");

@@ -18,6 +18,7 @@ test("native OfflineAudioContext matches independent oracle across rates and rou
     assert.ok(ready,"test HTTP server unavailable");
     const report=await page.evaluate(async()=>{
       const {renderConvolution}=await import("/src/convolution.mjs");
+      const {createLiveConvolutionGraph}=await import("/src/live-convolution.mjs");
       const {referenceConvolution}=await import("/tests/helpers/time-reference.mjs");
       const results=[];
       for(const sampleRate of [44100,48000,96000]){
@@ -38,6 +39,16 @@ test("native OfflineAudioContext matches independent oracle across rates and rou
             }
       }
       const sampleRate=48000,delay=48,frames=4800,h=new Float32Array(49);h[0]=h[48]=1;
+      const liveContext=new OfflineAudioContext(2,8,sampleRate);
+      const liveInput=liveContext.createBuffer(2,4,sampleRate);
+      liveInput.copyToChannel(Float32Array.of(1,2,0,0),0);
+      liveInput.copyToChannel(Float32Array.of(0,1,0,0),1);
+      const liveIR={sampleRate,channels:[Float32Array.of(.5,.25),Float32Array.of(.25,-.5)]};
+      const liveGraph=createLiveConvolutionGraph(liveContext,{sourceChannels:2,ir:liveIR,wet:1});
+      const liveSource=liveContext.createBufferSource();liveSource.buffer=liveInput;
+      liveSource.connect(liveGraph.input);liveGraph.output.connect(liveContext.destination);liveSource.start();
+      const rendered=await liveContext.startRendering();
+      const live=[...Array(2)].map((_,c)=>Array.from(rendered.getChannelData(c).slice(0,5)));
       const amplitude=[];
       for(const hz of [500,1000]){
         const x=Float32Array.from({length:frames},(_,n)=>.2*Math.sin(2*Math.PI*hz*n/sampleRate));
@@ -46,7 +57,7 @@ test("native OfflineAudioContext matches independent oracle across rates and rou
         for(let n=delay;n<frames;n++)power+=y.channels[0][n]**2;
         amplitude.push(Math.sqrt(power/(frames-delay)));
       }
-      return {results,amplitude};
+      return {results,amplitude,live};
     });
     assert.ok(report.results.length>0);
     for(const r of report.results){
@@ -54,6 +65,8 @@ test("native OfflineAudioContext matches independent oracle across rates and rou
     }
     assert.ok(report.amplitude[0]<1e-6,JSON.stringify(report.amplitude));
     assert.ok(Math.abs(report.amplitude[1]-.4/Math.sqrt(2))<.001,JSON.stringify(report.amplitude));
+    for(const [c,expected] of [[0,[.5,1.25,.5,0,0]],[1,[0,.25,-.5,0,0]]])
+      for(let i=0;i<expected.length;i++)assert.ok(Math.abs(report.live[c][i]-expected[i])<1e-6,JSON.stringify(report.live));
     assert.deepEqual(errors,[]);
     console.log("native convolution",report.results.length,"channel cases; max error",Math.max(...report.results.map(r=>r.error)),"comb RMS",report.amplitude);
   }finally{await cleanupTestProcesses(browser,[server]);}

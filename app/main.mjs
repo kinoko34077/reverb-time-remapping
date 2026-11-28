@@ -6,11 +6,13 @@ import {isScrubMode} from "../src/scrub-pair.mjs";
 import {secondsToFrames} from "../src/convolution.mjs";
 import {createWetMixBinding,mountWetMixField} from "../src/wet-mix.mjs";
 import {createSourceWaveView} from "./source-wave-view.mjs";
+import {openProgressiveMaterial,estimatePreparedComparisonBytes} from "../src/progressive-material.mjs";
+import {createProgressiveSession} from "../src/progressive-session.mjs";
 const $=id=>document.getElementById(id);
 let ctx,player,session,mode="dry",appliedMode="dry",busy=false,seeking=false,sourceFile=null,irFile=null;
 let sourceFileRevision=0,preparationRevision=0,preparationWork=null,queuedPreparation=null;
 const fileReadRevision={source:0,ir:0};
-let appliedSourceKey=null,stopRevision=0,wetApplyTimer=null;
+let appliedSourceKey=null,appliedSourceType="impulse",stopRevision=0,wetApplyTimer=null;
 let explicitStopIntent=false,stopping=false;
 const status=$("status"),seek=$("seek");
 let savedAxes={};const dragging=new Set();
@@ -60,10 +62,10 @@ function readWindow(){
 }
 function showWindow(next,{latest=true}={}){
   $("gain").textContent="共通出力ゲイン "+next.gain.applied.toFixed(4)+"（安全減衰を含む）";
-  const range=next.irWindow;
-  $("window-range").textContent="適用IR窓: "+(range.startFrame/next.sampleRate*1000).toFixed(3)+" – "+(range.endFrame/next.sampleRate*1000).toFixed(3)+" ms"+(range.truncated?"（IR終端まで）":"")+
+  const range=next.irWindow,irSampleRate=next.irSampleRate??next.sampleRate;
+  $("window-range").textContent="適用IR窓: "+(range.startFrame/irSampleRate*1000).toFixed(3)+" – "+(range.endFrame/irSampleRate*1000).toFixed(3)+" ms"+(range.truncated?"（IR終端まで）":"")+
     (next.irCalibration==="compensated"?" / RMS補正 ×"+next.irScale.toFixed(3):" / 自然減衰");
-  $("ir-window-scrub").max=String((next.irFrames-1)/next.sampleRate*1000);
+  $("ir-window-scrub").max=String((next.irFrames-1)/irSampleRate*1000);
   $("ir-window-scrub").value=$("ir-window-start").value;
   if(latest)$("window-request").textContent=$("ir-window-start").value+" ms";
 }
@@ -133,7 +135,7 @@ function pumpWindow(){
           if(!accepted)return;
           session=next;pendingWave=null;syncComparisonRange(next);wave.setInterval(next);
           showWindow(next,{latest:job.mode==="ir-window"&&job.revision===windowRevision});
-          showSpectral(next,{latest:job.mode==="ir-spectral"&&job.revision===windowRevision});show(player.state.position);
+          if(!next.progressive)showSpectral(next,{latest:job.mode==="ir-spectral"&&job.revision===windowRevision});show(player.state.position);
           if(job.revision===windowRevision)message(job.mode==="ir-spectral"?"IR再合成を適用":"IR窓を適用: "+next.irCalibration);
         });
       }finally{windowApplying=false;controls();}
@@ -163,7 +165,7 @@ function showCalibration(value){
 function message(s){status.textContent=s;}
 function controls(){
   for(const id of ["source","source-file","ir","ir-file","frequency","ir-length","predelay","ir-window-start","ir-window-length","ir-calibration","prepare","wet","solo"])$(id).disabled=busy;
-  for(const b of document.querySelectorAll("[data-mode]")){b.disabled=busy||!session;b.setAttribute("aria-pressed",String(b.dataset.mode===appliedMode));}
+  for(const b of document.querySelectorAll("[data-mode]")){b.disabled=busy||!session||(session.progressive&&!['dry','normal','ir-window'].includes(b.dataset.mode));b.setAttribute("aria-pressed",String(b.dataset.mode===appliedMode));}
   $("play").disabled=busy||!session||stopping;
   for(const id of ["pause","seek"])$(id).disabled=busy||!session;
   $("stop").disabled=!session;
@@ -256,7 +258,7 @@ function preparationJob(revision){
   const ir=irType==="file"?irFile:makeIR(irType,{seconds:irLength});
   if(!source||!ir)throw Error("素材を選択してください");
   const predelay=readNumber("predelay")/1000,irWindow=readWindow();
-  return {revision,source,ir,predelay,irWindow,
+  return {revision,source,ir,predelay,irWindow,sourceType,
     sourceKey:sourceType==="file"?"file:"+sourceFileRevision:`${sourceType}:${frequency}`};
 }
 function requestPreparation(){
@@ -276,10 +278,27 @@ function pumpPreparation(){
   const job=queuedPreparation;queuedPreparation=null;
   preparationWork=(async()=>{
     try{
-      const next=await prepareComparison(job.source,job.ir,{predelay:job.predelay,irWindow:job.irWindow});
+      let next;
+      if(job.source?.read){
+        const estimate=estimatePreparedComparisonBytes({sourceFrames:job.source.sourceFrames,
+          sourceSampleRate:job.source.sampleRate,sourceChannels:job.source.channelCount,
+          irFrames:job.ir.channels[0].length,irSampleRate:job.ir.sampleRate,irChannels:job.ir.channels.length,
+          delaySeconds:job.predelay});
+        if(estimate.withinBudget){
+          if(!job.source.file)throw Error("短尺音源を既存デコーダで準備できません");
+          const reader=job.source,pcm=await readLocalAudio(reader.file);
+          if(job.revision!==preparationRevision)return;
+          reader.dispose();if($("source").value==="file"&&sourceFile===reader)sourceFile=pcm;
+          job.source=pcm;
+          next=await prepareComparison(job.source,job.ir,{predelay:job.predelay,irWindow:job.irWindow});
+        }else next=createProgressiveSession(job.source,job.ir,{predelay:job.predelay,irWindowSettings:job.irWindow});
+      }else next=await prepareComparison(job.source,job.ir,{predelay:job.predelay,irWindow:job.irWindow});
       if(job.revision!==preparationRevision)return;
       await applyPreparation(job,next);
-    }catch(error){if(job.revision===preparationRevision)message("比較音を更新できません: "+error.message);}
+    }catch(error){if(job.revision===preparationRevision){
+      if(job.sourceKey!==appliedSourceKey)$("source").value=appliedSourceType;
+      message("比較音を更新できません: "+error.message);
+    }}
   })().finally(()=>{
     preparationWork=null;
     if(queuedPreparation&&!busy)pumpPreparation();
@@ -304,7 +323,10 @@ async function applyPreparation(job,next){
     if(!accepted)return;
     if(stopRevision!==stopToken)await player.stop();
     wetApplyRequested=false;clearTimeout(wetApplyTimer);wetApplyTimer=null;
-    session=next;appliedSourceKey=job.sourceKey;savedAxes={};pendingWave=null;
+    const priorProgressive=session?.progressive?session.source:null;
+    session=next;appliedSourceKey=job.sourceKey;appliedSourceType=job.sourceType;savedAxes={};pendingWave=null;
+    if(priorProgressive&&priorProgressive!==next.source&&priorProgressive!==sourceFile)
+      priorProgressive.dispose();
     if(queuedWindow?.mode==="ir-spectral")queuedWindow={...queuedWindow,settings:readSpectral()};
     syncComparisonRange(next,{reset:true});show(player.state.position);
     if(sourceChanged)wave.setSource(job.source,next);else wave.setInterval(next);
@@ -312,8 +334,8 @@ async function applyPreparation(job,next){
       $(name+"-speed").value="1";$(name+"-repeat").checked=false;$(name+"-loop-style").value="repeat";
     }
     showAxes(player.state.axes);showCalibration(player.state.calibration);
-    showWindow(next);showSpectral(next,{reset:true});
-    message("準備済み: "+mode);status.dataset.prepared="true";
+    showWindow(next);if(!next.progressive)showSpectral(next,{reset:true});
+    message(next.progressive?"準備済み: 長尺逐次再生 / Dry・Normal・IR Window（他方式は未対応）":"準備済み: "+mode);status.dataset.prepared="true";
   });
 }
 $("prepare").onclick=requestPreparation;
@@ -329,7 +351,7 @@ for(const [id,select,set] of [["source-file","source",v=>sourceFile=v],["ir-file
     // Keep AudioContext activation inside the user-selected file gesture.
     if(!player)void audio().catch(()=>{});
     try{
-      const data=await readLocalAudio(file);
+      const data=select==="source"?await openProgressiveMaterial(file):await readLocalAudio(file);
       if(revision!==fileReadRevision[select])return;
       set(data);
       if(select==="source")sourceFileRevision++;

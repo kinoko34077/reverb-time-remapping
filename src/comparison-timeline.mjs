@@ -44,7 +44,7 @@ export function createModeOutputContract({mode,timeline,sourceFrames,sourceSampl
       // output depends on source at this time and up to IR-length ahead.
       sourceStart=start-delayFrames;
       sourceEnd=end-delayFrames+irFrames-1;
-    }else if(mode==="normal"||mode==="ir-window"||mode==="wet-buffer"){
+    }else if(mode==="normal"||mode==="ir-window"||mode==="wet-buffer"||mode==="ir-spectral"){
       sourceStart=start-delayFrames-(irFrames-1);
       sourceEnd=end-delayFrames;
     }else if(mode==="dry"){

@@ -125,16 +125,19 @@ function showWindow(next,{latest=true}={}){
     (selected.end/irSampleRate*1000).toFixed(3)+" ms";
   irWave.refresh(true);
 }
-function readSpectral(){
-  const frames=id=>secondsToFrames(readNumber(id)/1000,session.sampleRate);
+function readSpectral(sampleRate=session.sampleRate,irFrames=session.irFrames){
+  const frames=id=>secondsToFrames(readNumber(id)/1000,sampleRate);
   const fftFrames=readNumber("ir-spectral-fft");
-  return {startFrame:frames("ir-spectral-start"),speed:readNumber("ir-spectral-speed"),
+  const startFrame=frames("ir-spectral-start");
+  const loopStartFrame=frames("ir-spectral-range-start");
+  const loopEndFrame=frames("ir-spectral-range-end");
+  return {startFrame,speed:readNumber("ir-spectral-speed"),
     outputFrames:frames("ir-spectral-length"),boundary:$("ir-spectral-boundary").value,
-    loopStartFrame:frames("ir-spectral-range-start"),loopEndFrame:frames("ir-spectral-range-end"),
+    loopStartFrame,loopEndFrame,
     fftFrames,hopFrames:fftFrames/8,calibration:$("ir-spectral-calibration").value};
 }
 function showSpectral(next,{reset=false,latest=true}={}){
-  const s=next.irSpectral,ms=frame=>frame*1000/next.sampleRate;
+  const s=next.irSpectral,ms=frame=>frame*1000/(next.irSampleRate??next.sampleRate);
   const requested=queuedWindow?.mode==="ir-spectral"?{
     start:$("ir-spectral-start").value,speed:$("ir-spectral-speed").value,
     length:$("ir-spectral-length").value,boundary:$("ir-spectral-boundary").value,
@@ -199,6 +202,7 @@ function pumpWindow(){
           session=next;if(base!==next)base.dispose?.();pendingWave=null;syncComparisonRange(next);wave.setInterval(next);
           showWindow(next,{latest:job.mode==="ir-window"&&job.revision===windowRevision});
           if(!next.progressive)showSpectral(next,{latest:job.mode==="ir-spectral"&&job.revision===windowRevision});show(player.state.position);
+          if(job.mode==="ir-spectral")showSpectral(next,{latest:job.revision===windowRevision});
           if(job.revision===windowRevision)message(job.mode==="ir-spectral"?"IR再合成を適用":"IR窓を適用: "+next.irCalibration);
         });
       }finally{windowApplying=false;controls();}
@@ -229,8 +233,8 @@ function message(s){status.textContent=s;}
 const abModes={a:"dry",b:"normal"};
 function controls(){
   for(const id of ["source","source-file","ir","ir-file","frequency","ir-length","predelay","ir-window-start","ir-window-length","ir-calibration","prepare","wet","solo"])$(id).disabled=busy;
-  for(const b of document.querySelectorAll("[data-mode]")){b.disabled=busy||!session||(session.progressive&&!['dry','normal','reverse','ir-window','wet-buffer'].includes(b.dataset.mode));b.setAttribute("aria-pressed",String(b.dataset.mode===appliedMode));}
-  const available=mode=>!!session&&(!session.progressive||["dry","normal","reverse","ir-window","wet-buffer"].includes(mode));
+  for(const b of document.querySelectorAll("[data-mode]")){b.disabled=busy||!session||(session.progressive&&!['dry','normal','reverse','ir-window','wet-buffer','ir-spectral'].includes(b.dataset.mode));b.setAttribute("aria-pressed",String(b.dataset.mode===appliedMode));}
+  const available=mode=>!!session&&(!session.progressive||["dry","normal","reverse","ir-window","wet-buffer","ir-spectral"].includes(mode));
   for(const slot of ["a","b"]){
     const other=slot==="a"?"b":"a",select=$("ab-"+slot+"-mode"),button=$("ab-listen-"+slot);
     select.disabled=busy;
@@ -342,17 +346,24 @@ async function choose(next){
   if(!session)return;
   if(next!==mode){cancelWindowRequests();if(mode==="ir-spectral")spectralWorker.cancel();}
   await audio();
+  let target=session;
+  if(target.progressive&&next==="ir-spectral"&&!target.irSpectral){
+    message("IRを再合成中…（入力音源は逐次読込のまま維持）");
+    target=await target.withIRSpectral(readSpectral(target.irSampleRate,target.irFrames),spectralWorker.render);
+  }
   const oldTimeline=activeTimeline??session.timeline;
   const nextTimeline=session.progressive&&next==="reverse"?session.outputFor("reverse").timeline:session.timeline;
   const currentTime=oldTimeline.timeAtFrame(player.state.position);
   const frame=nextTimeline.clampFrame(nextTimeline.frameAtTime(currentTime));
   if((next!==mode||!isScrubMode(next)||!player.setMix(binding.value,$("solo").value))&&
-     !await loadMode(session,next,{frame}))return;
+     !await loadMode(target,next,{frame}))return;
+  if(target!==session){const previous=session;session=target;previous.dispose?.();}
   activeTimeline=nextTimeline;seek.max=String(activeTimeline.length);
   wave.setInterval({interval:activeTimeline});
   if(isScrubMode(next)){showAxes(player.state.axes);showCalibration(player.state.calibration);}
   mode=appliedMode=next;pendingWave=null;pendingWetWave=null;wave.refresh(true);
   wetWave.setSignal(isScrubMode(next)?player.state.wetSignal:null);
+  if(next==="ir-spectral")showSpectral(session,{reset:!!session.progressive});
   message("適用: "+mode+" / Wet "+(binding.value*100).toFixed(3)+"%");
   show(player.state.position);
 }
@@ -438,14 +449,16 @@ async function applyPreparation(job,next){
       next=next.withProcessingRate(ctx.sampleRate);
     const resume=wasRunning&&stopRevision===stopToken;
     let nextMode=mode,fallbackReason="";
-    if(next.progressive&&!['dry','normal','reverse','ir-window','wet-buffer'].includes(nextMode)){
+    if(next.progressive&&!['dry','normal','reverse','ir-window','wet-buffer','ir-spectral'].includes(nextMode)){
       nextMode=job.predelay<0?"dry":"normal";
       fallbackReason=`長尺音源では${mode}が未対応のため${nextMode==="dry"?"Dry":"Normal"}へ切替`;
     }
-    if(next.progressive&&job.predelay<0&&["normal","ir-window","wet-buffer"].includes(nextMode)){
+    if(next.progressive&&job.predelay<0&&["normal","ir-window","wet-buffer","ir-spectral"].includes(nextMode)){
       nextMode="dry";
       fallbackReason="長尺音源の負Predelayは先読み処理が未実装のためDryへ切替";
     }
+    if(next.progressive&&nextMode==="ir-spectral")
+      next=await next.withIRSpectral(readSpectral(next.irSampleRate,next.irFrames),spectralWorker.render);
     const destinationTimeline=next.progressive&&nextMode==="reverse"?next.outputFor("reverse").timeline:next.timeline;
     const frame=sourceChanged||stoppedSinceRequest?0:
       destinationTimeline.clampFrame(destinationTimeline.frameAtTime(previousTime));
@@ -481,9 +494,9 @@ async function applyPreparation(job,next){
     }
     showAxes(player.state.axes);showCalibration(player.state.calibration);
     wetWave.setSignal(isScrubMode(nextMode)?player.state.wetSignal:null);
-    showWindow(next);if(!next.progressive)showSpectral(next,{reset:true});
-    message(fallbackReason?`準備済み: ${fallbackReason}。長尺逐次再生 / Dry・Normal・Reverse・IR Window（他方式は未対応）`:
-      next.progressive?"準備済み: 長尺逐次再生 / Dry・Normal・Reverse・IR Window・Wet Buffer":"準備済み: "+mode);status.dataset.prepared="true";
+    showWindow(next);if(!next.progressive||next.irSpectral)showSpectral(next,{reset:true});
+    message(fallbackReason?`準備済み: ${fallbackReason}。長尺逐次再生 / Dry・Normal・Reverse・IR Window・Wet Buffer・IR Spectral`:
+      next.progressive?"準備済み: 長尺逐次再生 / Dry・Normal・Reverse・IR Window・Wet Buffer・IR Spectral":"準備済み: "+mode);status.dataset.prepared="true";
   });
 }
 $("prepare").onclick=requestPreparation;

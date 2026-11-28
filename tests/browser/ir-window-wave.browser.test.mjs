@@ -94,6 +94,11 @@ test("IR window endpoints are directly editable on the real IR waveform",async()
       const range=document.querySelector("#window-range").textContent.match(/適用IR窓:\s*([\d.]+)\s*–\s*([\d.]+)/);
       return !marker.hidden&&!!range&&Number(range[2])>=139&&!document.querySelector("#play").disabled;
     },{timeout:4000});
+    await canvas.evaluate(element=>element.dispatchEvent(new WheelEvent("wheel",{
+      deltaY:10,bubbles:true,cancelable:true
+    })));
+    const afterWheel=Number(await page.$eval("#ir-window-start",element=>element.value));
+    assert.ok(afterWheel>0&&afterWheel<20,JSON.stringify({afterWheel}));
     assert.deepEqual(errors,[]);
   }finally{await cleanupTestProcesses(browser,[server]);}
 });

@@ -35,8 +35,8 @@ const irWave=createIRWaveView({
   onStart:seconds=>{
     const rate=session?.irSampleRate??session?.ir?.sampleRate??48000;
     const frames=session?.irFrames??session?.ir?.channels?.[0]?.length??0;
-    const length=Math.max(1,Math.round(Number($("ir-window-length").value||1)*rate/1000));
-    const start=Math.max(0,Math.min(Math.max(0,frames-length),Math.round(seconds*rate)));
+    const length=Math.max(1,Math.min(frames,Math.round(Number($("ir-window-length").value||1)*rate/1000)));
+    const start=Math.max(0,Math.min(Math.max(0,frames-length),Math.round(seconds*rate-length/2)));
     $("ir-window-start").value=String(start*1000/rate);
     requestWindow();
   },

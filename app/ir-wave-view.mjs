@@ -5,7 +5,18 @@ import {createPlayerWaveEditor} from "../shared/atf/player-wave-editor.mjs";
 export function createIRWaveView({getWindow,onStart,onEdge,canEdit}){
   const $=id=>document.getElementById(id);
   const canvas=$("ir-wave-detail"),wrap=$("ir-wave-detail-wrap");
-  let ir=null,closed=false,viewportFrame=null;
+  let ir=null,closed=false,viewportFrame=null,anchorRefreshPending=false;
+  function reanchor(range){
+    const next=range.start+(range.end-range.start)/2;
+    if(viewportFrame!==null&&Math.abs(next-viewportFrame)<.5)return;
+    viewportFrame=next;
+    if(anchorRefreshPending)return;
+    anchorRefreshPending=true;
+    queueMicrotask(()=>{
+      anchorRefreshPending=false;
+      if(!closed)editor.refresh(true);
+    });
+  }
   const editor=createPlayerWaveEditor({canvas,wrap,overviewSelection:$("ir-wave-overview-selection"),
     markerA:$("ir-wave-a-marker"),markerB:$("ir-wave-b-marker"),
     zoomIn:$("ir-wave-zoom-in"),zoomOut:$("ir-wave-zoom-out"),zoomLabel:$("ir-wave-zoom-label"),
@@ -18,8 +29,7 @@ export function createIRWaveView({getWindow,onStart,onEdge,canEdit}){
     onStart:()=>{},onScrubMotion:()=>{},onScrubState:()=>{},
     onAB:(edge,frame)=>{
       if(!edge&&ir&&!wrap.dataset.interaction){
-        const range=getWindow();
-        viewportFrame=range.start+(range.end-range.start)/2;
+        reanchor(getWindow());
       }
       if(edge&&ir&&canEdit())onEdge(edge,frame);
       const range=ir?getWindow():{start:0,end:0};

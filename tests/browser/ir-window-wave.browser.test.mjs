@@ -94,6 +94,20 @@ test("IR window endpoints are directly editable on the real IR waveform",async()
       const range=document.querySelector("#window-range").textContent.match(/適用IR窓:\s*([\d.]+)\s*–\s*([\d.]+)/);
       return !marker.hidden&&!!range&&Number(range[2])>=139&&!document.querySelector("#play").disabled;
     },{timeout:4000});
+    const longStart=await page.$eval("#ir-wave-a-marker",element=>element.getBoundingClientRect().x+element.getBoundingClientRect().width/2);
+    const longRect=await canvas.boundingBox(),longY=longRect.y+longRect.height/2;
+    await page.mouse.move(longStart,longY);await page.mouse.down();
+    await page.mouse.move(longStart+160,longY,{steps:4});await page.mouse.up();
+    const repaintedA=await page.$eval("#ir-wave-a-marker",element=>({hidden:element.hidden,x:element.getBoundingClientRect().x+element.getBoundingClientRect().width/2}));
+    assert.equal(repaintedA.hidden,false);
+    await page.mouse.move(repaintedA.x,longY);await page.mouse.down();
+    const repeatedHandle=await page.$eval("#ir-wave-detail-wrap",element=>element.dataset.interaction);
+    await page.mouse.up();
+    assert.equal(repeatedHandle,"a");
+    await page.$eval("#ir-window-start",element=>{element.value="0";element.dispatchEvent(new Event("change",{bubbles:true}));});
+    await page.$eval("#ir-window-length",element=>{element.value="140";element.dispatchEvent(new Event("change",{bubbles:true}));});
+    await page.waitForFunction(()=>document.querySelector("#window-range").textContent.includes("適用IR窓: 0.000")&&
+      !document.querySelector("#play").disabled,{timeout:4000});
     await canvas.evaluate(element=>element.dispatchEvent(new WheelEvent("wheel",{
       deltaY:10,bubbles:true,cancelable:true
     })));

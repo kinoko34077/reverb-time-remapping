@@ -68,6 +68,25 @@ test("IR window endpoints are directly editable on the real IR waveform",async()
     const range=state.selected.match(/適用IR窓:\s*([\d.]+)\s*–\s*([\d.]+)/);
     assert.ok(range&&Math.abs(Number(range[1]))<.01&&Number(range[2])>50&&Number(range[2])<70,JSON.stringify(state));
     assert.ok(state.marker&&state.irSamples>9000,JSON.stringify(state));
+
+    // A moves the viewport's apparent start. Repeating the same pointer
+    // coordinate must not keep moving A as the editor refreshes.
+    await page.$eval("#ir-window-start",element=>{element.value="40";element.dispatchEvent(new Event("change",{bubbles:true}));});
+    await page.$eval("#ir-window-length",element=>{element.value="20";element.dispatchEvent(new Event("change",{bubbles:true}));});
+    await page.waitForFunction(()=>document.querySelector("#window-range").textContent.includes("適用IR窓: 40.00")&&
+      !document.querySelector("#play").disabled,{timeout:4000});
+    const markerA=await page.$eval("#ir-wave-a-marker",element=>({hidden:element.hidden,
+      x:element.getBoundingClientRect().x+element.getBoundingClientRect().width/2}));
+    assert.equal(markerA.hidden,false);
+    const rect=await canvas.boundingBox(),targetX=markerA.x+40,targetY=rect.y+rect.height/2;
+    await page.mouse.move(markerA.x,targetY);await page.mouse.down();
+    await page.mouse.move(targetX,targetY,{steps:3});
+    const afterFirstMove=Number(await page.$eval("#ir-window-start",element=>element.value));
+    await page.mouse.move(targetX,targetY);
+    const afterStationaryMove=Number(await page.$eval("#ir-window-start",element=>element.value));
+    assert.ok(Math.abs(afterStationaryMove-afterFirstMove)<0.01,
+      JSON.stringify({afterFirstMove,afterStationaryMove}));
+    await page.mouse.up();
     assert.deepEqual(errors,[]);
   }finally{await cleanupTestProcesses(browser,[server]);}
 });

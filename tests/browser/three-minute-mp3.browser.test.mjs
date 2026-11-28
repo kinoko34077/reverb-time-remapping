@@ -72,6 +72,9 @@ test("three-minute stereo MP3 remains seekable, restores Normal from unsupported
       {timeout:30000}).catch(async error=>{throw Error(`${error.message}; status=${await page.$eval("#status",e=>e.textContent)}`);});
     assert.equal(await page.$eval("#wet-calibration",element=>element.disabled),true);
     assert.equal(await page.$eval("#wet-loop-style",element=>element.disabled),true);
+    const axisBounds=await page.evaluate(()=>({sourceMax:Number(document.querySelector("#source-seek").max),
+      wetMax:Number(document.querySelector("#wet-seek").max)}));
+    assert.ok(axisBounds.wetMax>axisBounds.sourceMax,JSON.stringify(axisBounds));
     await page.$eval("#source-seek",(element,frame)=>{element.value=String(frame);element.dispatchEvent(new Event("change"));},
       Math.round(150*44100));
     await page.waitForFunction(()=>document.querySelector("#source-position").textContent.includes("150."),{timeout:30000});
@@ -86,21 +89,52 @@ test("three-minute stereo MP3 remains seekable, restores Normal from unsupported
     const beforeReverse=await page.evaluate(()=>({source:Number(document.querySelector("#source-seek").value),
       wet:Number(document.querySelector("#wet-seek").value),status:document.querySelector("#status").textContent}));
     assert.ok(beforeReverse.source>Math.round(150*44100),JSON.stringify(beforeReverse));
+    await page.waitForFunction(()=>!document.querySelector("#wet-speed").disabled,{timeout:30000});
     await page.$eval("#wet-speed",element=>{element.value="-1";element.dispatchEvent(new Event("change"));});
     await new Promise(resolve=>setTimeout(resolve,1500));
     const afterReverse=await page.evaluate(()=>({source:Number(document.querySelector("#source-seek").value),
       wet:Number(document.querySelector("#wet-seek").value),status:document.querySelector("#status").textContent}));
     assert.ok(afterReverse.source>beforeReverse.source,JSON.stringify({beforeReverse,afterReverse}));
     assert.ok(afterReverse.wet<beforeReverse.wet,JSON.stringify({beforeReverse,afterReverse}));
+    await page.waitForFunction(()=>!document.querySelector("#wet-speed").disabled,{timeout:30000});
     await page.$eval("#wet-speed",element=>{element.value="0";element.dispatchEvent(new Event("change"));});
+    await page.waitForFunction(()=>!document.querySelector("#wet-speed").disabled,{timeout:30000});
     await new Promise(resolve=>setTimeout(resolve,400));
     const freezeAnchor=await page.$eval("#wet-seek",element=>Number(element.value));
     await new Promise(resolve=>setTimeout(resolve,600));
     const frozen=await page.evaluate(()=>({source:Number(document.querySelector("#source-seek").value),
-      wet:Number(document.querySelector("#wet-seek").value)}));
+      wet:Number(document.querySelector("#wet-seek").value),speed:document.querySelector("#wet-speed").value,
+      status:document.querySelector("#status").textContent}));
     assert.ok(frozen.source>afterReverse.source,JSON.stringify({afterReverse,frozen}));
     assert.equal(frozen.wet,freezeAnchor,JSON.stringify({freezeAnchor,frozen}));
     assert.deepEqual(errors,[]);
+    await page.waitForFunction(()=>!document.querySelector("#wet-speed").disabled,{timeout:30000});
+    await page.$eval("#wet-speed",element=>{element.value="1";element.dispatchEvent(new Event("change"));});
+    await page.waitForFunction(()=>!document.querySelector("#wet-speed").disabled,{timeout:30000});
+    const tailStart=Math.round(180.2*44100);
+    await page.waitForFunction(()=>!document.querySelector("#source-seek").disabled&&
+      !document.querySelector("#wet-seek").disabled,{timeout:30000});
+    await page.$eval("#source-seek",(element,frame)=>{element.value=String(frame);element.dispatchEvent(new Event("change"));},
+      Math.round(179.6*44100));
+    await page.waitForFunction(()=>Number(document.querySelector("#source-seek").value)>Math.round(179.5*44100),
+      {timeout:30000});
+    await page.waitForFunction(()=>!document.querySelector("#wet-seek").disabled,{timeout:30000});
+    await page.$eval("#wet-seek",(element,frame)=>{element.value=String(frame);element.dispatchEvent(new Event("input"));
+      element.dispatchEvent(new Event("change"));},tailStart);
+    await page.waitForFunction(frame=>Number(document.querySelector("#wet-seek").value)===frame,
+      {timeout:30000},tailStart).catch(async()=>{throw Error(JSON.stringify(await page.evaluate(()=>({wet:Number(document.querySelector("#wet-seek").value),
+        max:Number(document.querySelector("#wet-seek").max),position:document.querySelector("#wet-position").textContent,
+        status:document.querySelector("#status").textContent}))));});
+    await page.click("#play");
+    await page.waitForFunction(()=>document.querySelector("#status").textContent==="再生要求を受理"||
+      document.querySelector("#status").textContent.startsWith("再生エラー"),{timeout:30000});
+    await new Promise(resolve=>setTimeout(resolve,900));
+    const tailPlayback=await page.evaluate(()=>({source:Number(document.querySelector("#source-seek").value),
+      wet:Number(document.querySelector("#wet-seek").value),wetMax:Number(document.querySelector("#wet-seek").max),
+      status:document.querySelector("#status").textContent}));
+    assert.ok(tailPlayback.source>=axisBounds.sourceMax-5000,JSON.stringify({axisBounds,tailPlayback}));
+    assert.ok(tailPlayback.wet>tailStart+25_000&&tailPlayback.wet<tailPlayback.wetMax,
+      JSON.stringify({axisBounds,tailStart,tailPlayback}));
     await page.click("#stop");
     await page.waitForFunction(()=>Number(document.querySelector("#source-seek").value)===0,{timeout:10000});
 

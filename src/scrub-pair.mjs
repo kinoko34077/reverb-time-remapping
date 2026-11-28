@@ -44,12 +44,17 @@ export function axisSource(signal,config,processingMode){
 }
 export async function createScrubPair({ctx,dry,wet,mode,mix,solo,calibration="natural",onEvent=()=>{},positions={}}){
   const length=dry.sourceFrames??dry.channels?.[0]?.length,sr=dry.sampleRate;
-  const wetLength=wet.sourceFrames??wet.channels?.[0]?.length;
-  if(!isScrubMode(mode)||wetLength!==length||wet.sampleRate!==sr||wet.origin!==dry.origin)
+  let wetLength=wet.sourceFrames??wet.channels?.[0]?.length;
+  if(!isScrubMode(mode)||wetLength<length||wet.sampleRate!==sr||wet.origin!==dry.origin)
     throw RangeError("共通座標のWetキャッシュが必要です");
   const progressiveWet=wet.source&&typeof wet.source.read==="function"&&wet.mode==="normal"?
     await createProgressiveWetPCMReader(wet.source,wet.ir,{predelaySeconds:wet.predelay,Context:globalThis.OfflineAudioContext}):null;
-  if(progressiveWet){wet={...wet,reader:progressiveWet};calibration="natural";}
+  if(progressiveWet){
+    if(wet.wetOutputFrames&&wet.wetOutputFrames!==progressiveWet.sourceFrames){
+      progressiveWet.dispose();throw RangeError("Wet tailの出力長が比較座標と一致しません");
+    }
+    wetLength=progressiveWet.sourceFrames;wet={...wet,reader:progressiveWet,sourceFrames:wetLength};calibration="natural";
+  }
   let closed=false,running=false,connected=false;
   let wetCalibration=validateCalibration(calibration),calibrationFrame=null,calibrationScale=1;
   const localLevel=progressiveWet?null:createLocalRMSCalibration(wet.channels,Math.max(1,Math.round(.05*sr)));
@@ -78,6 +83,7 @@ export async function createScrubPair({ctx,dry,wet,mode,mix,solo,calibration="na
       ended:Object.values(tracks).every(t=>t.ended),axes:state(),calibration:calibrationState()});
   };
   const mapFrame=(route,frame)=>route.reader?.toSourceFrame?route.reader.toSourceFrame(frame):frame;
+  const signalLength=signal=>signal.sourceFrames??signal.channels?.[0]?.length??length;
   function updateFrame(t,route,frame){
     t.frame=mapFrame(route,frame);
     if(route.reader?.isReturning)t.returning=route.reader.isReturning(frame);
@@ -130,13 +136,14 @@ export async function createScrubPair({ctx,dry,wet,mode,mix,solo,calibration="na
     }finally{clearTimeout(timer);route.resolve=null;route.reject=null;}
   }
   const setup=async(name,signal,processingMode,value)=>{
-    const config={frame:0,speed:1,repeat:false,rangeStartFrame:0,rangeEndFrame:length,
+    const axisLength=signalLength(signal);
+    const config={frame:0,speed:1,repeat:false,rangeStartFrame:0,rangeEndFrame:axisLength,
       loopStyle:"repeat",returning:false,...positions[name]};
-    const source=axisSource(signal,config,processingMode),plan=source.plan;
+    const source=axisSource({...signal,sourceFrames:axisLength},config,processingMode),plan=source.plan;
     const gain=ctx.createGain();gain.gain.value=value;nodes.push(gain);
     const level=name==="wet"?ctx.createGain():null;
     if(level){level.gain.value=1;gain.connect(level);nodes.push(level);}
-    const t={name,signal,config,anchor:plan.anchor,frame:plan.frame,returning:config.returning,
+    const t={name,signal:{...signal,sourceFrames:axisLength},config,anchor:plan.anchor,frame:plan.frame,returning:config.returning,
       ended:false,gain,level,processingMode,route:null};
     tracks[name]=t;
     t.route=await prepareRoute(t,config,source);
@@ -148,10 +155,10 @@ export async function createScrubPair({ctx,dry,wet,mode,mix,solo,calibration="na
   catch(error){dispose();throw error;}
   async function configure(name,config){
     ensure();if(!tracks[name])throw Error("参照軸がありません");
-    const t=tracks[name],next={...t.config,frame:state()[name].frame,returning:t.returning,...config};
-    next.frame=Math.min(length,Math.max(0,Math.round(next.frame)));
+    const t=tracks[name],axisLength=signalLength(t.signal),next={...t.config,frame:state()[name].frame,returning:t.returning,...config};
+    next.frame=Math.min(axisLength,Math.max(0,Math.round(next.frame)));
     let source=axisSource(t.signal,next,t.processingMode),plan=source.plan;
-    const prior=t.config,priorPlan=axisPlan({...prior,frame:Math.round(state()[name].frame)},length,sr,t.processingMode);
+    const prior=t.config,priorPlan=axisPlan({...prior,frame:Math.round(state()[name].frame)},axisLength,sr,t.processingMode);
     const old=t.route;
     const sameReader=!!old.reader===!!source.reader&&(!old.reader||
       old.reader.startFrame===source.reader.startFrame&&old.reader.endFrame===source.reader.endFrame);
@@ -163,7 +170,7 @@ export async function createScrubPair({ctx,dry,wet,mode,mix,solo,calibration="na
         candidate=await prepareRoute(t,next,source);
         stagedRoutes.add(candidate);
         if(!Object.hasOwn(config,"frame")){
-          next.frame=Math.min(length,Math.max(0,Math.round(state()[name].frame)));
+          next.frame=Math.min(axisLength,Math.max(0,Math.round(state()[name].frame)));
           next.returning=t.returning;source=axisSource(t.signal,next,t.processingMode);plan=source.plan;
           const needsReseek=source.frame!==candidate.bridge.latest?.sourceFrame;
           if(needsReseek)await candidate.bridge.seek(source.frame);
@@ -176,7 +183,7 @@ export async function createScrubPair({ctx,dry,wet,mode,mix,solo,calibration="na
         let candidateFrame=candidate.receipt?.sourceFrame??source.frame;
         // Stop or a seek may have moved the installed axis while this candidate waited for readiness.
         if(!Object.hasOwn(config,"frame")){
-          next.frame=Math.min(length,Math.max(0,Math.round(state()[name].frame)));
+          next.frame=Math.min(axisLength,Math.max(0,Math.round(state()[name].frame)));
           next.returning=t.returning;source=axisSource(t.signal,next,t.processingMode);plan=source.plan;
           if(source.frame!==candidate.bridge.latest?.sourceFrame){
             const receipt=await candidate.bridge.seek(source.frame);
@@ -201,15 +208,15 @@ export async function createScrubPair({ctx,dry,wet,mode,mix,solo,calibration="na
       const loopChanged=plan.loop!==priorPlan.loop||plan.a!==priorPlan.a||plan.b!==priorPlan.b;
       const rawFreeze=t.processingMode==="raw"&&(plan.frozen||priorPlan.frozen);
       if(loopChanged)receipt=await old.bridge.setLoopConfiguration(plan.a,plan.b,plan.loop);
-      if(Object.hasOwn(config,"frame")||rawFreeze&&loopChanged)
-        receipt=await old.bridge.scrub(Math.min(length-1,plan.frame),plan.speed);
+      if(Object.hasOwn(config,"frame")||rawFreeze&&(plan.frozen!==priorPlan.frozen||loopChanged)
+        receipt=await old.bridge.scrub(Math.min(axisLength-1,plan.frame),plan.speed);
       else if(plan.speed!==priorPlan.speed)receipt=await old.bridge.setSpeed(plan.speed);
     }else{
       const loopChanged=plan.loop!==priorPlan.loop||plan.a!==priorPlan.a||plan.b!==priorPlan.b;
       const rawFreeze=t.processingMode==="raw"&&(plan.frozen||priorPlan.frozen);
       if(loopChanged)receipt=await old.bridge.setLoopConfiguration(plan.a,plan.b,plan.loop);
       if(Object.hasOwn(config,"frame")||rawFreeze&&(plan.frozen!==priorPlan.frozen||loopChanged))
-        receipt=await old.bridge.scrub(Math.min(length-1,plan.frame),plan.speed);
+        receipt=await old.bridge.scrub(Math.min(axisLength-1,plan.frame),plan.speed);
       else if(plan.speed!==priorPlan.speed)receipt=await old.bridge.setSpeed(plan.speed);
     }
     if(receipt?.stale)return receipt;
@@ -230,7 +237,8 @@ export async function createScrubPair({ctx,dry,wet,mode,mix,solo,calibration="na
       active.forEach((t,i)=>updateFrame(t,t.route,receipts[i].sourceFrame));running=false;
       staged.forEach(route=>{route.paused=true;route.resolve?.(null);});
       report({type:"pair-accepted"});return {sourceFrame:state().source.frame};},
-    async seek(frame){await Promise.all(["source","wet"].map(name=>configure(name,{frame})));return {sourceFrame:state().source.frame};},
+    async seek(frame){await Promise.all(["source","wet"].map(name=>
+      configure(name,{frame:Math.min(signalLength(tracks[name].signal),frame)})));return {sourceFrame:state().source.frame};},
     configure,dispose,get axes(){return state();},get calibration(){return calibrationState();},
     setCalibration(mode){ensure();wetCalibration=validateCalibration(mode);applyCalibration(true);report({type:"axis-accepted",axis:"wet"});return true;},
     setMix(mix,solo){const values=scrubGains(mix,solo);Object.values(tracks).forEach((t,i)=>t.gain.gain.setTargetAtTime(values[i],ctx.currentTime,.005));}

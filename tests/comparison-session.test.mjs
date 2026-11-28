@@ -40,6 +40,14 @@ test("mode output contract maps nonzero Source origins to local reader frames",a
     start:0,end:2,lookaheadFrames:0,tailFrames:1
   });
 });
+test("mode output contract clamps converted ranges at source EOF",async()=>{
+  const {createComparisonTimeline,createModeOutputContract}=await import("../src/comparison-timeline.mjs");
+  const timeline=createComparisonTimeline({interval:{start:0,end:65},sampleRate:48000});
+  const contract=createModeOutputContract({mode:"dry",timeline,sourceFrames:59,sourceSampleRate:44100,irFrames:1});
+  assert.deepEqual(contract.requiredSourceRange(0,65),{
+    start:0,end:59,lookaheadFrames:0,tailFrames:0
+  });
+});
 function wav(){
   const a=new ArrayBuffer(48),d=new DataView(a),tag=(p,s)=>{for(let i=0;i<s.length;i++)d.setUint8(p+i,s.charCodeAt(i));};
   tag(0,"RIFF");d.setUint32(4,40,true);tag(8,"WAVE");tag(12,"fmt ");d.setUint32(16,16,true);

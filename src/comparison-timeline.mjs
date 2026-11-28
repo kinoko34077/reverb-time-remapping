@@ -54,8 +54,9 @@ export function createModeOutputContract({mode,timeline,sourceFrames,sourceSampl
     }
     const sourceEndFrame=sourceOrigin+sourceFrames/ratio;
     const clamp=value=>Math.min(sourceEndFrame,Math.max(sourceOrigin,value));
-    return Object.freeze({start:Math.floor((clamp(sourceStart)-sourceOrigin)*ratio),
-      end:Math.ceil((clamp(sourceEnd)-sourceOrigin)*ratio),lookaheadFrames:mode==="reverse"?irFrames-1:0,
+    const toSourceFrame=value=>Math.max(0,Math.min(sourceFrames,value));
+    return Object.freeze({start:toSourceFrame(Math.floor((clamp(sourceStart)-sourceOrigin)*ratio)),
+      end:toSourceFrame(Math.ceil((clamp(sourceEnd)-sourceOrigin)*ratio)),lookaheadFrames:mode==="reverse"?irFrames-1:0,
       tailFrames:mode==="reverse"?0:irFrames-1});
   }
   return Object.freeze({mode,timeline,sourceFrames,sourceSampleRate,irFrames,delayFrames,

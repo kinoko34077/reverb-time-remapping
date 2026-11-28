@@ -24,9 +24,9 @@ export function createComparisonTimeline({interval,sampleRate}={}){
 // `delayFrames` and `irFrames` use the timeline's processing sample rate;
 // source reads are converted back to the source's native frame clock.
 export function createModeOutputContract({mode,timeline,sourceFrames,sourceSampleRate=timeline?.sampleRate,
-  irFrames,delayFrames=0,sourceRevision=0,irRevision=0,mixRevision=0}={}){
+  sourceOrigin=0,irFrames,delayFrames=0,sourceRevision=0,irRevision=0,mixRevision=0}={}){
   if(!mode||!timeline||!Number.isSafeInteger(sourceFrames)||sourceFrames<1||
-     !Number.isFinite(sourceSampleRate)||sourceSampleRate<=0||
+     !Number.isFinite(sourceSampleRate)||sourceSampleRate<=0||!Number.isSafeInteger(sourceOrigin)||
      !Number.isSafeInteger(irFrames)||irFrames<1||!Number.isSafeInteger(delayFrames)||
      !Number.isSafeInteger(sourceRevision)||sourceRevision<0||
      !Number.isSafeInteger(irRevision)||irRevision<0||
@@ -52,10 +52,10 @@ export function createModeOutputContract({mode,timeline,sourceFrames,sourceSampl
     }else{
       throw new RangeError("この方式のSource範囲写像は未定義です");
     }
-    const sourceLimit=sourceFrames/ratio;
-    const clamp=value=>Math.min(sourceLimit,Math.max(0,value));
-    return Object.freeze({start:Math.floor(clamp(sourceStart)*ratio),
-      end:Math.ceil(clamp(sourceEnd)*ratio),lookaheadFrames:mode==="reverse"?irFrames-1:0,
+    const sourceEndFrame=sourceOrigin+sourceFrames/ratio;
+    const clamp=value=>Math.min(sourceEndFrame,Math.max(sourceOrigin,value));
+    return Object.freeze({start:Math.floor((clamp(sourceStart)-sourceOrigin)*ratio),
+      end:Math.ceil((clamp(sourceEnd)-sourceOrigin)*ratio),lookaheadFrames:mode==="reverse"?irFrames-1:0,
       tailFrames:mode==="reverse"?0:irFrames-1});
   }
   return Object.freeze({mode,timeline,sourceFrames,sourceSampleRate,irFrames,delayFrames,

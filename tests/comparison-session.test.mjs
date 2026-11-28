@@ -32,6 +32,14 @@ test("common interval, Dry bypass, reverse origin and shared safe gain",async()=
   assert.ok(c.gain.peak*c.gain.applied<=.900000000001);
   await assert.rejects(prepareComparison(x,h,{maxBytes:4,renderMono:mono}),/予算/);
 });
+test("mode output contract maps nonzero Source origins to local reader frames",async()=>{
+  const x={sampleRate:sr,origin:10,channels:[Float32Array.of(1,2)]};
+  const h={sampleRate:sr,origin:0,channels:[Float32Array.of(1,1)]};
+  const c=await prepareComparison(x,h,{renderMono:mono});
+  assert.deepEqual(c.outputFor("dry").requiredSourceRange(1,2),{
+    start:0,end:2,lookaheadFrames:0,tailFrames:1
+  });
+});
 function wav(){
   const a=new ArrayBuffer(48),d=new DataView(a),tag=(p,s)=>{for(let i=0;i<s.length;i++)d.setUint8(p+i,s.charCodeAt(i));};
   tag(0,"RIFF");d.setUint32(4,40,true);tag(8,"WAVE");tag(12,"fmt ");d.setUint32(16,16,true);

@@ -33,6 +33,10 @@ test("progressive IR Window slices the kernel without shortening the source time
   assert.equal(moved.irWindow.startFrame,24);
   assert.equal(moved.irWindow.endFrame,72);
   assert.equal(moved.length,session.length);
+  assert.equal(moved.outputFor("ir-window").irFrames,48);
+  assert.deepEqual(moved.outputFor("ir-window").requiredSourceRange(30,1),{
+    start:0,end:31,lookaheadFrames:0,tailFrames:47
+  });
 });
 
 test("progressive preview gain bounds both Normal and compensated IR Window convolution",()=>{

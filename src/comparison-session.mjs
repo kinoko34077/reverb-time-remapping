@@ -39,9 +39,10 @@ export async function prepareComparison(input,ir,{predelay=0,maxBytes=DEFAULT_PC
     function outputFor(mode,{sourceRevision=0,irRevision=0,mixRevision=0}={}){
       if(!["dry","normal","reverse","ir-window"].includes(mode))
         throw new RangeError("方式別出力契約が未定義です");
-      const selectedKernel=mode==="ir-window"?extractIRWindow(ir,irWindow).channels[0].length:irFrames;
+      const selectedKernel=mode==="ir-window"?window.range.endFrame-window.range.startFrame:irFrames;
       return createModeOutputContract({mode,timeline:createComparisonTimeline({interval,sampleRate:input.sampleRate}),
-        sourceFrames:input.channels[0].length,sourceSampleRate:input.sampleRate,irFrames:selectedKernel,
+        sourceFrames:input.channels[0].length,sourceOrigin:input.origin??0,
+        sourceSampleRate:input.sampleRate,irFrames:selectedKernel,
         delayFrames:delay,sourceRevision,irRevision,mixRevision});
     }
     return Object.freeze({signals,interval,sampleRate:input.sampleRate,length,

@@ -10,7 +10,6 @@ export function createIRWaveView({getWindow,onStart,onEdge,canEdit}){
   canvas.addEventListener("wheel",event=>{
     if(!event.ctrlKey&&!event.metaKey)return;
     visualRelocation=true;
-    queueMicrotask(()=>{visualRelocation=false;});
   },true);
   function reanchor(range){
     const next=range.start+(range.end-range.start)/2;
@@ -47,6 +46,11 @@ export function createIRWaveView({getWindow,onStart,onEdge,canEdit}){
       const range=ir?getWindow():{start:0,end:0};
       return {a:range.start,b:range.end,enabled:!!ir};
     }
+  });
+  // The shared editor handles the bubbling wheel event after its capture
+  // phase. Keep the visual-only flag alive until that handler has returned.
+  canvas.addEventListener("wheel",event=>{
+    if(event.ctrlKey||event.metaKey)visualRelocation=false;
   });
   const resize=new ResizeObserver(()=>{if(!closed)editor.refresh(true);});
   resize.observe(wrap);

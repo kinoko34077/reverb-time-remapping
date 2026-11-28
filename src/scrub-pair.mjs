@@ -208,7 +208,7 @@ export async function createScrubPair({ctx,dry,wet,mode,mix,solo,calibration="na
       const loopChanged=plan.loop!==priorPlan.loop||plan.a!==priorPlan.a||plan.b!==priorPlan.b;
       const rawFreeze=t.processingMode==="raw"&&(plan.frozen||priorPlan.frozen);
       if(loopChanged)receipt=await old.bridge.setLoopConfiguration(plan.a,plan.b,plan.loop);
-      if(Object.hasOwn(config,"frame")||rawFreeze&&(plan.frozen!==priorPlan.frozen||loopChanged)
+      if(Object.hasOwn(config,"frame")||rawFreeze&&(plan.frozen!==priorPlan.frozen||loopChanged))
         receipt=await old.bridge.scrub(Math.min(axisLength-1,plan.frame),plan.speed);
       else if(plan.speed!==priorPlan.speed)receipt=await old.bridge.setSpeed(plan.speed);
     }else{

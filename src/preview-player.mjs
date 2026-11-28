@@ -51,7 +51,7 @@ export function createPreviewPlayer(ctx,{onState=()=>{},createBridge=createSourc
     });
   }
   const wetAmount=(mix,solo)=>solo==="dry"?0:solo==="wet"?1:mix;
-  async function load(signal,appliedGain,{frame=position,resume=running,reset=false,scrub=null,positions={},crossfade=false}={}){
+  async function load(signal,appliedGain,{frame=position,resume=running,reset=false,preserveFrame=false,scrub=null,positions={},crossfade=false}={}){
     ensure();const token=++revision;
     const reader=signal?.source&&typeof signal.source.read==="function"?signal.source:null;
     const length=reader?signal.sourceFrames:signal.channels[0].length;
@@ -150,7 +150,7 @@ export function createPreviewPlayer(ctx,{onState=()=>{},createBridge=createSourc
       }
       const paused=current?await current.pause():null;
       if(stale())return abandon();
-      const target=reset?initial:resume?Math.min(length,Math.max(0,Math.round(paused?.sourceFrame??position))):initial;
+      const target=reset||preserveFrame?initial:resume?Math.min(length,Math.max(0,Math.round(paused?.sourceFrame??position))):initial;
       if(target!==initial){
         if(scrub){
           await next.configure("source",{frame:target});

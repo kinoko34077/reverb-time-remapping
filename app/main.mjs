@@ -332,8 +332,10 @@ async function loadMode(target,next,options={}){
     const dry=target.progressive?await target.select("dry",mix,solo):target.signals.dry;
     const wet=target.progressive?await target.select("normal",mix,solo):target.signals.normal;
     return await player.load(dry,target.gain.applied,{...options,
+      preserveFrame:options.preserveFrame??(options.frame!==undefined&&next!==appliedMode),
       scrub:{wet,mode:next,mix,solo,calibration:$("wet-calibration").value},positions});
-  }else return await player.load(await target.select(next,binding.value,$("solo").value),target.gain.applied,options);
+  }else return await player.load(await target.select(next,binding.value,$("solo").value),target.gain.applied,
+    {...options,preserveFrame:options.preserveFrame??(options.frame!==undefined&&next!==appliedMode)});
 }
 async function choose(next){
   if(!session)return;
@@ -346,6 +348,7 @@ async function choose(next){
   if((next!==mode||!isScrubMode(next)||!player.setMix(binding.value,$("solo").value))&&
      !await loadMode(session,next,{frame}))return;
   activeTimeline=nextTimeline;seek.max=String(activeTimeline.length);
+  wave.setInterval({interval:activeTimeline});
   if(isScrubMode(next)){showAxes(player.state.axes);showCalibration(player.state.calibration);}
   mode=appliedMode=next;pendingWave=null;pendingWetWave=null;wave.refresh(true);
   wetWave.setSignal(isScrubMode(next)?player.state.wetSignal:null);
@@ -460,7 +463,8 @@ async function applyPreparation(job,next){
     activeSourceReader=job.sourceType==="file"&&typeof job.source?.read==="function"?job.source:null;
     if(queuedWindow?.mode==="ir-spectral")queuedWindow={...queuedWindow,settings:readSpectral()};
     syncComparisonRange(next,{reset:true});show(player.state.position);
-    if(waveSourceChanged)wave.setSource(job.waveSource,next);else wave.setInterval(next);
+    if(waveSourceChanged)wave.setSource(job.waveSource,next);
+    wave.setInterval({interval:activeTimeline});
     if(activeIRKey!==job.irKey){activeIRKey=job.irKey;irWave.setIR(job.ir);}
     else irWave.refresh(true);
     activeIRSource=job.ir;

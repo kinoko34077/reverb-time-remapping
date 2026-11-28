@@ -49,6 +49,19 @@ test("three-minute stereo MP3 plays full-length progressive Reverse",async()=>{
       element.dispatchEvent(new Event("change"));},target);
     await page.waitForFunction(frame=>Number(document.querySelector("#seek").value)===frame,{timeout:10000},target);
     await page.waitForFunction(()=>!document.querySelector("#play").disabled,{timeout:30000});
+    const reverseWave=await page.evaluate(()=>({time:Number.parseFloat(document.querySelector("#time").textContent),
+      note:document.querySelector("#source-wave-note").textContent}));
+    const reverseWaveTime=Number(reverseWave.note.match(/比較時刻\s+(\d+\.\d{3}) s/)?.[1]);
+    assert.ok(Math.abs(reverseWaveTime-reverseWave.time)<.15,JSON.stringify({reverseWave,reverseWaveTime}));
+    const waveSize=await page.$eval("#wave-detail",canvas=>({width:canvas.clientWidth,height:canvas.clientHeight}));
+    await page.click("#wave-detail",{offset:{x:waveSize.width/2,y:waveSize.height/2}});
+    await page.waitForFunction(()=>!document.querySelector("#play").disabled,{timeout:30000});
+    const waveSeek=await page.evaluate(()=>Number.parseFloat(document.querySelector("#time").textContent));
+    assert.ok(Math.abs(waveSeek-reverseWave.time)<.5,JSON.stringify({reverseWave,waveSeek}));
+    await page.$eval("#seek",(element,frame)=>{element.value=String(frame);element.dispatchEvent(new Event("input"));
+      element.dispatchEvent(new Event("change"));},target);
+    await page.waitForFunction(frame=>Number(document.querySelector("#seek").value)===frame,{timeout:10000},target);
+    await page.waitForFunction(()=>!document.querySelector("#play").disabled,{timeout:30000});
     await page.click("#play");
     await page.waitForFunction(()=>document.querySelector("#status").textContent==="再生要求を受理"||
       document.querySelector("#status").textContent.startsWith("再生エラー"),{timeout:30000}).catch(async error=>{
@@ -60,6 +73,20 @@ test("three-minute stereo MP3 plays full-length progressive Reverse",async()=>{
     const playback=await page.evaluate(()=>({status:document.querySelector("#status").textContent,
       seek:Number(document.querySelector("#seek").value),renderedFrames:Number(document.querySelector("#status").dataset.renderedFrames)}));
     assert.ok(playback.renderedFrames>256&&playback.seek>target,JSON.stringify(playback));
+    const beforeSwitch=await page.evaluate(()=>Number.parseFloat(document.querySelector("#time").textContent));
+    await page.click('[data-mode="normal"]');
+    await page.waitForFunction(()=>document.querySelector('[data-mode="normal"]').getAttribute("aria-pressed")==="true");
+    const normal=await page.evaluate(()=>({time:Number.parseFloat(document.querySelector("#time").textContent),
+      wave:document.querySelector("#source-wave-note").textContent,running:document.querySelector("#play").textContent}));
+    assert.ok(Math.abs(normal.time-beforeSwitch)<.5,JSON.stringify({beforeSwitch,normal}));
+    assert.match(normal.wave,/比較時刻\s+\d+\.\d{3} s/);
+    const waveTime=Number(normal.wave.match(/比較時刻\s+(\d+\.\d{3}) s/)?.[1]);
+    assert.ok(Math.abs(waveTime-normal.time)<.15,JSON.stringify({normal,waveTime}));
+    const beforeReverse=normal.time;
+    await page.click('[data-mode="reverse"]');
+    await page.waitForFunction(()=>document.querySelector('[data-mode="reverse"]').getAttribute("aria-pressed")==="true");
+    const reverse=await page.evaluate(()=>Number.parseFloat(document.querySelector("#time").textContent));
+    assert.ok(Math.abs(reverse-beforeReverse)<.5,JSON.stringify({beforeReverse,reverse}));
     await page.click("#stop");
     await page.waitForFunction(()=>Number(document.querySelector("#seek").value)===0,{timeout:10000});
     assert.deepEqual(errors,[]);

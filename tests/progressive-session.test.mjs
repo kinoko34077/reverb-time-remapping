@@ -160,6 +160,40 @@ test("progressive IR Window slices the kernel without shortening the source time
   });
 });
 
+test("progressive IR Spectral uses the finite remapped kernel with the existing streamed convolution route",async()=>{
+  const input=Float32Array.from([1,.5,-.25,.75,.1,-.2,.4,.3]);
+  const reads=[];
+  const source={sourceFrames:input.length,channelCount:1,sampleRate:48_000,maxReadFrames:3,
+    async read(startFrame,frameCount){reads.push([startFrame,frameCount]);
+      return {startFrame,channels:[input.slice(startFrame,startFrame+frameCount)]};}};
+  const ir={origin:0,sampleRate:48_000,channels:[Float32Array.of(.5,.25,.125)]};
+  const session=createProgressiveSession(source,ir);
+  assert.throws(()=>session.outputFor("ir-spectral"),/not prepared/);
+  const remapped=await session.withIRSpectral({outputFrames:4,calibration:"natural"},async(original,settings)=>{
+    assert.equal(original,session.ir);
+    assert.equal(settings.outputFrames,4);
+    return {origin:0,sampleRate:48_000,channels:[Float32Array.of(.25,.5,-.25,.125)],
+      trajectory:{startFrame:0,speed:1,boundary:"zero",loopStartFrame:0,loopEndFrame:3,
+        outputFrames:4,renderedFrames:3,endFrame:3,algorithm:"exact-raw",fftFrames:2048,hopFrames:256,phaseLock:true}};
+  });
+  const signal=await remapped.select("ir-spectral",1,"wet");
+  assert.equal(signal.mode,"normal","the existing live convolution graph processes the transformed finite kernel");
+  assert.equal(signal.source,source,"the complete Source remains a progressive reader");
+  assert.deepEqual(Array.from(signal.ir.channels[0]),[.25,.5,-.25,.125]);
+  assert.equal(signal.sourceFrames,input.length);
+  assert.equal(signal.output.mode,"ir-spectral");
+  assert.deepEqual(signal.output.requiredSourceRange(2,3),{
+    start:0,end:5,lookaheadFrames:0,tailFrames:3
+  });
+  assert.ok(remapped.gain.applied*remapped.gain.peak<=remapped.gain.ceiling);
+  assert.deepEqual((await remapped.select("normal")).ir.channels,session.ir.channels,"Normal retains the unmodified original IR");
+  assert.equal((await remapped.select("ir-window")).ir.channels[0].length,3,"IR Window still addresses the original IR");
+  assert.deepEqual(reads,[],"building/selecting an IR kernel must not read or materialize the full Source");
+  const changedWindow=await remapped.withIRWindow({start:0,duration:2/48_000,calibration:"natural"});
+  assert.ok(changedWindow.irSpectral,"changing IR Window preserves the separately prepared IR Spectral kernel");
+  session.dispose();remapped.dispose();changedWindow.dispose();
+});
+
 test("progressive preview gain bounds both Normal and compensated IR Window convolution",async()=>{
   const source={sourceFrames:3*48_000,channelCount:2,sampleRate:48_000,async read(){}};
   const samples=new Float32Array(100_000);

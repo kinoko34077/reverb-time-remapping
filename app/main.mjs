@@ -255,11 +255,10 @@ function controls(){
       session.progressive&&suffix==="loop-style";
 }
 function syncComparisonRange(next,{reset=false}={}){
-  seek.max=String(next.length);
-  const a=next.interval.start/next.sampleRate;
+  seek.max=String(next.timeline.length);
+  const a=next.timeline.timeAtFrame(0),b=next.timeline.timeAtFrame(next.timeline.length);
   for(const name of ["source","wet"]){
     const frames=name==="wet"&&next.progressive?next.wetOutputFrames:next.length;
-    const b=(next.interval.start+frames)/next.sampleRate;
     $(name+"-seek").max=String(frames-1);
     for(const suffix of ["range-start","range-end"]){
       $(name+"-"+suffix).min=String(a);$(name+"-"+suffix).max=String(b);
@@ -271,8 +270,8 @@ function syncComparisonRange(next,{reset=false}={}){
 }
 function show(frame){
   if(!session)return;
-  if(!seeking)seek.value=String(Math.min(session.length,Math.max(0,Math.round(frame))));
-  $("time").textContent=((session.interval.start+frame)/session.sampleRate).toFixed(3)+" s";
+  if(!seeking)seek.value=String(session.timeline.clampFrame(frame));
+  $("time").textContent=session.timeline.timeAtFrame(frame).toFixed(3)+" s";
 }
 async function run(fn){
   if(busy)return;busy=true;controls();
@@ -421,9 +420,8 @@ async function applyPreparation(job,next){
     const previousFrame=Math.round(player?.state.position??0);
     let frame=sourceChanged||stoppedSinceRequest?0:previousFrame;
     if(!sourceChanged&&!stoppedSinceRequest&&session&&next.sampleRate>0){
-      const sourceTime=(session.interval.start+previousFrame)/session.sampleRate;
-      frame=Math.round(sourceTime*next.sampleRate-next.interval.start);
-      frame=Math.max(0,Math.min(next.length,frame));
+      const sourceTime=session.timeline.timeAtFrame(previousFrame);
+      frame=next.timeline.clampFrame(next.timeline.frameAtTime(sourceTime));
     }
     await audio();
     if(job.revision!==preparationRevision)return;

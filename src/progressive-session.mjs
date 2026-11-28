@@ -1,5 +1,6 @@
 import {validatePCM} from "./convolution.mjs";
 import {extractIRWindow} from "./ir-window.mjs";
+import {createComparisonTimeline} from "./comparison-timeline.mjs";
 
 const PROGRESSIVE_MODES=new Set(["dry","normal","ir-window"]);
 const PREVIEW_REQUESTED_GAIN=.25;
@@ -36,9 +37,10 @@ export function createProgressiveSession(source,ir,{predelay=0,
   const gain={applied:Math.min(PREVIEW_REQUESTED_GAIN,PREVIEW_CEILING/peak),
     peak,ceiling:PREVIEW_CEILING};
   const length=source.sourceFrames,sampleRate=source.sampleRate;
+  const interval={start:0,end:length};
   return Object.freeze({
     progressive:true,source,ir:kernel,length,sampleRate,processingRate,
-    interval:{start:0,end:length},wetOutputFrames,irFrames:kernel.channels[0].length,irSampleRate:kernel.sampleRate,
+    interval,timeline:createComparisonTimeline({interval,sampleRate}),wetOutputFrames,irFrames:kernel.channels[0].length,irSampleRate:kernel.sampleRate,
     irWindow:window.range,irCalibration:window.calibration,irScale:window.scale,
     gain,
     async withIRWindow(settings){return createProgressiveSession(source,kernel,{predelay,irWindowSettings:settings,processingRate});},

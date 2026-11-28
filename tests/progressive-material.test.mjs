@@ -32,6 +32,23 @@ test("progressive material rejects multichannel audio rather than silently dropp
   assert.ok(inputs.every(input=>input.disposed));
 });
 
+test("metadata probe keeps short native-decodable audio available without WebCodecs",async()=>{
+  let disposed=false;
+  const api={ALL_FORMATS:[],BlobSource:class{},AudioSampleSink:class{},Input:class{
+    async canRead(){return true;}
+    async getPrimaryAudioTrack(){return {getNumberOfChannels:async()=>2,getSampleRate:async()=>44100,canDecode:async()=>false};}
+    async getFirstTimestamp(){return 0;}
+    async getDurationFromMetadata(){return 3;}
+    dispose(){disposed=true;}
+  }};
+  const source=await openProgressiveMaterial({name:"native-only.mp3"},{media:api});
+  assert.equal(source.canReadPCM,false);assert.equal(source.duration,3);
+  assert.equal(source.sourceFrames,132_300);assert.equal(source.channelCount,2);
+  assert.equal(disposed,true);
+  await assert.rejects(source.read(0,128),/逐次音声デコードに対応/);
+  source.dispose();
+});
+
 test("prepared comparison estimate routes a three-minute stereo source away from full PCM caches",()=>{
   const short=estimatePreparedComparisonBytes({sourceFrames:48000,sourceSampleRate:48000,
     sourceChannels:2,irFrames:72000,irChannels:2});

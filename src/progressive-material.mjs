@@ -63,13 +63,29 @@ export async function openProgressiveMaterial(file,{media, ...options}={}){
   if(!file||typeof file!=="object")throw new TypeError("音源ファイルがありません");
   const api=media??await import("../shared/atf/vendor/mediabunny-1.66.1.mjs");
   const probe=new api.Input({formats:api.ALL_FORMATS,source:new api.BlobSource(file)});
+  let progressiveReadable=false,metadata;
   try{
     if(!await probe.canRead())throw Error("対応していない音声形式です");
     const track=await probe.getPrimaryAudioTrack();
     if(!track)throw Error("音声トラックが見つかりません");
     const count=await track.getNumberOfChannels();
     if(![1,2].includes(count))throw RangeError("モノラルまたはステレオの音声が必要です");
+    const sampleRate=await track.getSampleRate();
+    const sourceStartTime=Math.max(0,await probe.getFirstTimestamp([track]));
+    let endTime=await probe.getDurationFromMetadata([track]);
+    if(!Number.isFinite(endTime)||endTime<=sourceStartTime)endTime=await probe.computeDuration([track]);
+    const duration=endTime-sourceStartTime,sourceFrames=Math.round(duration*sampleRate);
+    if(!Number.isFinite(sampleRate)||sampleRate<=0||!Number.isFinite(duration)||duration<=0||
+       !Number.isSafeInteger(sourceFrames)||sourceFrames<1)
+      throw Error("音声の長さ・チャンネル情報を読み取れません");
+    progressiveReadable=await track.canDecode();
+    metadata={fileName:file.name||"audio",duration,sourceStartTime,sourceFrames,
+      sampleRate,channelCount:count,windowFrames:65_536,maxReadFrames:1_048_576};
   }finally{probe.dispose();}
+  if(!progressiveReadable){
+    return {...metadata,file,canReadPCM:false,stats:()=>({cachedFrames:0,windows:0}),
+      read:async()=>{throw Error("このブラウザは逐次音声デコードに対応していません");},dispose(){}};
+  }
   const source=await createProgressiveAudioSource(file,{...options,media:api});
-  return {...source,file};
+  return {...source,file,canReadPCM:true};
 }

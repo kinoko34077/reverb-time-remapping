@@ -288,10 +288,15 @@ function pumpPreparation(){
           if(!job.source.file)throw Error("短尺音源を既存デコーダで準備できません");
           const reader=job.source,pcm=await readLocalAudio(reader.file);
           if(job.revision!==preparationRevision)return;
-          reader.dispose();if($("source").value==="file"&&sourceFile===reader)sourceFile=pcm;
+          if($("source").value==="file"&&sourceFile===reader)sourceFile=pcm;
           job.source=pcm;
+          job.sourceRepresentationChanged=true;
           next=await prepareComparison(job.source,job.ir,{predelay:job.predelay,irWindow:job.irWindow});
-        }else next=createProgressiveSession(job.source,job.ir,{predelay:job.predelay,irWindowSettings:job.irWindow});
+        }else{
+          if(job.source.canReadPCM===false)
+            throw Error("この長さの音源は逐次デコードできません。対応codecの音源か短い音源を選んでください");
+          next=createProgressiveSession(job.source,job.ir,{predelay:job.predelay,irWindowSettings:job.irWindow});
+        }
       }else next=await prepareComparison(job.source,job.ir,{predelay:job.predelay,irWindow:job.irWindow});
       if(job.revision!==preparationRevision)return;
       await applyPreparation(job,next);
@@ -335,11 +340,11 @@ async function applyPreparation(job,next){
     wetApplyRequested=false;clearTimeout(wetApplyTimer);wetApplyTimer=null;
     const priorProgressive=session?.progressive?session.source:null;
     session=next;appliedSourceKey=job.sourceKey;appliedSourceType=job.sourceType;savedAxes={};pendingWave=null;
-    if(priorProgressive&&priorProgressive!==next.source&&priorProgressive!==sourceFile)
-      priorProgressive.dispose();
     if(queuedWindow?.mode==="ir-spectral")queuedWindow={...queuedWindow,settings:readSpectral()};
     syncComparisonRange(next,{reset:true});show(player.state.position);
-    if(sourceChanged)wave.setSource(job.source,next);else wave.setInterval(next);
+    if(sourceChanged||job.sourceRepresentationChanged)wave.setSource(job.source,next);else wave.setInterval(next);
+    if(priorProgressive&&priorProgressive!==next.source&&priorProgressive!==sourceFile)
+      priorProgressive.dispose();
     for(const name of ["source","wet"]){
       $(name+"-speed").value="1";$(name+"-repeat").checked=false;$(name+"-loop-style").value="repeat";
     }

@@ -104,18 +104,24 @@ export function createPreviewPlayer(ctx,{onState=()=>{},createBridge=createSourc
         const last=current.latest;
         const estimated=last?.running&&!last.ended&&Number.isFinite(last.outputTime)?
           last.sourceFrame+Math.max(0,ctx.currentTime-last.outputTime)*signal.sampleRate:position;
-        const target=Math.min(length,Math.max(0,Math.round(estimated)));
+        let target=Math.min(length,Math.max(0,Math.round(estimated)));
         if(target<length){
           await next.seek(target);
           if(stale())return abandon();
+          // Freeze the old source clock before the potentially slow history read.
+          // The accepted pause frame is the replacement's true handoff position.
+          const paused=await current.pause();
+          if(stale())return abandon();
+          target=Math.min(length,Math.max(0,Math.round(paused?.sourceFrame??position)));
+          if(target!==estimated)await next.seek(target);
           nextHistory=await prepareHistory(target);
           if(stale())return abandon();
-           readyEvent=null;lastReadyEvent=null;
+          readyEvent=null;lastReadyEvent=null;
           await next.play();
            if(!readyEvent)readyEvent=await waitForRender();
           if(stale())return abandon();
           startHistory(nextHistory,nextRoute,readyEvent.outputTime);
-           const previous={bridge:current,node:route,graph:currentGraph,history:currentHistory};
+          const previous={bridge:current,node:route,graph:currentGraph,history:currentHistory};
           retiring.add(previous);
           const now=ctx.currentTime,end=now+.025;
           route.gain.cancelScheduledValues(now);route.gain.setValueAtTime(route.gain.value,now);

@@ -33,11 +33,13 @@ test("progressive replacement and resume restore convolution at the final transp
           node.latest={sourceFrame:frame,outputTime:ctx.currentTime,running,ended:false};
           onEvent({type:"render-applied",sourceFrame:frame,outputTime:ctx.currentTime,running:true,missingFramesInBlock:0});
           return {sourceFrame:frame};};
-        node.pause=async()=>{running=false;node.latest={sourceFrame:frame,outputTime:ctx.currentTime,running,ended:false};return {sourceFrame:frame};};
+        node.pause=async()=>{if(running)frame=Math.min(source.sourceFrames,frame+2400);
+          running=false;node.latest={sourceFrame:frame,outputTime:ctx.currentTime,running,ended:false};return {sourceFrame:frame};};
         node.dispose=()=>{};bridges.push(node);return node;
       };
       const restore=async(_ctx,_source,_ir,targetFrame)=>{
         restored.push(targetFrame);
+        await new Promise(resolve=>setTimeout(resolve,20));
         return targetFrame===0?null:{startFrame:targetFrame,sampleRate:ctx.sampleRate,channels:[Float32Array.of(.1)]};
       };
       const player=createPreviewPlayer(ctx,{createBridge:bridgeFactory,restoreHistory:restore});
@@ -57,7 +59,8 @@ test("progressive replacement and resume restore convolution at the final transp
       player.dispose();await ctx.close();return result;
     });
     assert.ok(result.replacementFrame>0,JSON.stringify(result));
-    assert.equal(result.restored[1],result.seekTargets[0],"replacement history must follow the bridge's actual seek position");
+    assert.ok(result.seekTargets.length>=2,JSON.stringify(result));
+    assert.equal(result.restored[1],result.seekTargets.at(-1),"replacement history must follow the pause-accepted handoff frame");
     assert.equal(result.bridgesAfterResume,result.bridgesBeforePause+1,"resume must rebuild the live convolution route");
     assert.equal(result.restored.at(-1),result.pauseFrame,"resume history must start at the accepted pause frame");
     assert.ok(result.readsAfterResume>result.readsBeforeResume,JSON.stringify(result));

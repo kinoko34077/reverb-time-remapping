@@ -2,7 +2,7 @@ import {renderConvolution,comparisonInterval,alignPCM,mixAligned,previewGain,sec
 import {extractIRWindow} from "./ir-window.mjs";
 import {renderIRSpectral} from "./ir-spectral.mjs";
 import {validateCalibration,pcmRMS,rmsCorrection} from "./level-calibration.mjs";
-import {createComparisonTimeline} from "./comparison-timeline.mjs";
+import {createComparisonTimeline,createModeOutputContract} from "./comparison-timeline.mjs";
 export const MODES=["dry","normal","reverse","ir-window","wet-buffer","wet-spectral","ir-spectral"];
 export async function prepareComparison(input,ir,{predelay=0,maxBytes=DEFAULT_PCM_BUDGET_BYTES,renderMono,irWindow}={}){
   const delay=secondsToFrames(predelay,input.sampleRate);
@@ -36,8 +36,17 @@ export async function prepareComparison(input,ir,{predelay=0,maxBytes=DEFAULT_PC
   function session(window,spectral,interval,base){
     const signals={...base,"ir-window":window.signal,"ir-spectral":spectral.signal};
     const gain=previewGain(Object.values(signals),.25,.9),length=interval.end-interval.start;
+    function outputFor(mode,{sourceRevision=0,irRevision=0,mixRevision=0}={}){
+      if(!["dry","normal","reverse","ir-window"].includes(mode))
+        throw new RangeError("方式別出力契約が未定義です");
+      const selectedKernel=mode==="ir-window"?window.range.endFrame-window.range.startFrame:irFrames;
+      return createModeOutputContract({mode,timeline:createComparisonTimeline({interval,sampleRate:input.sampleRate}),
+        sourceFrames:input.channels[0].length,sourceOrigin:input.origin??0,
+        sourceSampleRate:input.sampleRate,irFrames:selectedKernel,
+        delayFrames:delay,sourceRevision,irRevision,mixRevision});
+    }
     return Object.freeze({signals,interval,sampleRate:input.sampleRate,length,
-      timeline:createComparisonTimeline({interval,sampleRate:input.sampleRate}),gain,irWindow:window.range,
+      timeline:createComparisonTimeline({interval,sampleRate:input.sampleRate}),outputFor,gain,irWindow:window.range,
       irFrames,irCalibration:window.calibration,irScale:window.scale,
       irSpectral:spectral.trajectory,irSpectralCalibration:spectral.calibration,irSpectralScale:spectral.scale,
       async withIRWindow(settings){

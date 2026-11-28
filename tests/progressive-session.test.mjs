@@ -15,6 +15,16 @@ test("progressive IR Window slices the kernel without shortening the source time
   assert.equal(window.sourceFrames,source.sourceFrames);
   assert.equal(normal.ir.channels[0].length,128);
   assert.equal(window.ir.channels[0].length,72);
+  assert.equal(normal.output.timeline.length,session.wetOutputFrames);
+  const reverse=session.outputFor("reverse");
+  assert.equal(reverse.timeline.start,-127);
+  assert.equal(reverse.timeline.end,source.sourceFrames);
+  assert.deepEqual(reverse.requiredSourceRange(0,64),{
+    start:0,end:64,lookaheadFrames:127,tailFrames:0
+  });
+  assert.deepEqual(reverse.requiredSourceRange(reverse.timeline.length-64,64),{
+    start:499_936,end:500_000,lookaheadFrames:127,tailFrames:0
+  });
   assert.equal(session.irWindow.startFrame,48);
   assert.equal(session.irWindow.endFrame,120);
   assert.deepEqual(Array.from(window.ir.channels[0]),Array.from(ir.channels[0].slice(48,120)));
@@ -23,6 +33,10 @@ test("progressive IR Window slices the kernel without shortening the source time
   assert.equal(moved.irWindow.startFrame,24);
   assert.equal(moved.irWindow.endFrame,72);
   assert.equal(moved.length,session.length);
+  assert.equal(moved.outputFor("ir-window").irFrames,48);
+  assert.deepEqual(moved.outputFor("ir-window").requiredSourceRange(30,1),{
+    start:0,end:31,lookaheadFrames:0,tailFrames:47
+  });
 });
 
 test("progressive preview gain bounds both Normal and compensated IR Window convolution",()=>{

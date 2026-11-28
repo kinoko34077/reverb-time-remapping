@@ -21,12 +21,32 @@ test("common interval, Dry bypass, reverse origin and shared safe gain",async()=
   const h={sampleRate:sr,origin:0,channels:[Float32Array.of(.5,.25),Float32Array.of(-.5,.25)]};
   const c=await prepareComparison(x,h,{predelay:-1/sr,renderMono:mono});
   assert.deepEqual(c.interval,{start:-2,end:2});
+  assert.equal(c.outputFor("reverse").timeline.start,-2);
+  assert.deepEqual(c.outputFor("reverse").requiredSourceRange(0,2),{
+    start:0,end:2,lookaheadFrames:1,tailFrames:0
+  });
   assert.equal(c.select("dry",1),c.signals.dry);
   assert.equal(c.select("normal",.7,"wet"),c.signals.normal);
   assert.deepEqual(Array.from(c.signals.reverse.channels[0]),[.25,1,1,0]);
   assert.deepEqual(Array.from(c.select("normal",0).channels[0]),Array.from(c.signals.dry.channels[0]));
   assert.ok(c.gain.peak*c.gain.applied<=.900000000001);
   await assert.rejects(prepareComparison(x,h,{maxBytes:4,renderMono:mono}),/予算/);
+});
+test("mode output contract maps nonzero Source origins to local reader frames",async()=>{
+  const x={sampleRate:sr,origin:10,channels:[Float32Array.of(1,2)]};
+  const h={sampleRate:sr,origin:0,channels:[Float32Array.of(1,1)]};
+  const c=await prepareComparison(x,h,{renderMono:mono});
+  assert.deepEqual(c.outputFor("dry").requiredSourceRange(1,2),{
+    start:0,end:2,lookaheadFrames:0,tailFrames:1
+  });
+});
+test("mode output contract clamps converted ranges at source EOF",async()=>{
+  const {createComparisonTimeline,createModeOutputContract}=await import("../src/comparison-timeline.mjs");
+  const timeline=createComparisonTimeline({interval:{start:0,end:65},sampleRate:48000});
+  const contract=createModeOutputContract({mode:"dry",timeline,sourceFrames:59,sourceSampleRate:44100,irFrames:1});
+  assert.deepEqual(contract.requiredSourceRange(0,65),{
+    start:0,end:59,lookaheadFrames:0,tailFrames:0
+  });
 });
 function wav(){
   const a=new ArrayBuffer(48),d=new DataView(a),tag=(p,s)=>{for(let i=0;i<s.length;i++)d.setUint8(p+i,s.charCodeAt(i));};

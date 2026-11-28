@@ -21,6 +21,10 @@ test("common interval, Dry bypass, reverse origin and shared safe gain",async()=
   const h={sampleRate:sr,origin:0,channels:[Float32Array.of(.5,.25),Float32Array.of(-.5,.25)]};
   const c=await prepareComparison(x,h,{predelay:-1/sr,renderMono:mono});
   assert.deepEqual(c.interval,{start:-2,end:2});
+  assert.equal(c.outputFor("reverse").timeline.start,-2);
+  assert.deepEqual(c.outputFor("reverse").requiredSourceRange(0,2),{
+    start:0,end:2,lookaheadFrames:1,tailFrames:0
+  });
   assert.equal(c.select("dry",1),c.signals.dry);
   assert.equal(c.select("normal",.7,"wet"),c.signals.normal);
   assert.deepEqual(Array.from(c.signals.reverse.channels[0]),[.25,1,1,0]);

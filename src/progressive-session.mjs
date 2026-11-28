@@ -1,6 +1,6 @@
 import {validatePCM} from "./convolution.mjs";
 import {extractIRWindow} from "./ir-window.mjs";
-import {createComparisonTimeline} from "./comparison-timeline.mjs";
+import {createComparisonTimeline,createModeOutputContract} from "./comparison-timeline.mjs";
 
 const PROGRESSIVE_MODES=new Set(["dry","normal","ir-window"]);
 const PREVIEW_REQUESTED_GAIN=.25;
@@ -38,11 +38,24 @@ export function createProgressiveSession(source,ir,{predelay=0,
     peak,ceiling:PREVIEW_CEILING};
   const length=source.sourceFrames,sampleRate=source.sampleRate;
   const interval={start:0,end:length};
+  function outputFor(mode,{sourceRevision=0,irRevision=0,mixRevision=0}={}){
+    if(!["dry","normal","reverse","ir-window","wet-buffer"].includes(mode))
+      throw new RangeError("方式別出力契約が未定義です");
+    const selectedKernel=mode==="ir-window"?window:kernel;
+    const selectedIRFrames=Math.max(1,Math.round(selectedKernel.channels[0].length*sampleRate/selectedKernel.sampleRate));
+    const selectedDelay=Math.round(Math.max(0,predelay)*sampleRate);
+    const outputInterval=mode==="reverse"?
+      {start:selectedDelay-(selectedIRFrames-1),end:length+selectedDelay}:
+      mode==="dry"?interval:{start:0,end:length+selectedDelay+selectedIRFrames-1};
+    const timeline=createComparisonTimeline({interval:outputInterval,sampleRate});
+    return createModeOutputContract({mode,timeline,sourceFrames:length,sourceSampleRate:sampleRate,
+      irFrames:selectedIRFrames,delayFrames:selectedDelay,sourceRevision,irRevision,mixRevision});
+  }
   return Object.freeze({
     progressive:true,source,ir:kernel,length,sampleRate,processingRate,
     interval,timeline:createComparisonTimeline({interval,sampleRate}),wetOutputFrames,irFrames:kernel.channels[0].length,irSampleRate:kernel.sampleRate,
     irWindow:window.range,irCalibration:window.calibration,irScale:window.scale,
-    gain,
+    gain,outputFor,
     async withIRWindow(settings){return createProgressiveSession(source,kernel,{predelay,irWindowSettings:settings,processingRate});},
     withProcessingRate(rate){return createProgressiveSession(source,kernel,{predelay,irWindowSettings,processingRate:rate});},
     select(mode,mix=.25,solo="mix"){
@@ -50,6 +63,7 @@ export function createProgressiveSession(source,ir,{predelay=0,
       if(!Number.isFinite(mix)||mix<0||mix>1||!["mix","dry","wet"].includes(solo))
         throw new RangeError("無効な試聴比率");
       return {source,sourceFrames:length,wetOutputFrames,sampleRate,mode,
+        output:outputFor(mode),
         ir:mode==="ir-window"?window:kernel,mix,solo,predelay};
     }
   });

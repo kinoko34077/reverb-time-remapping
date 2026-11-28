@@ -21,6 +21,12 @@ test("progressive replacement and resume restore convolution at the final transp
     const result=await page.evaluate(async()=>{
       const {createPreviewPlayer}=await import("/src/preview-player.mjs");
       const ctx=new AudioContext();await ctx.resume();
+      const createBufferSource=ctx.createBufferSource.bind(ctx),historyStarts=[];
+      ctx.createBufferSource=()=>{
+        const node=createBufferSource(),start=node.start.bind(node);
+        node.start=(...args)=>{if(args.length>1)historyStarts.push(args);return start(...args);};
+        return node;
+      };
       const restored=[],bridges=[],seekTargets=[],playingDuringRestore=[];
       const source={sourceFrames:480000,channelCount:1,sampleRate:48000,maxReadFrames:1024,
         async read(start,count){return {startFrame:start,channels:[new Float32Array(count)]};},dispose(){}};
@@ -46,7 +52,8 @@ test("progressive replacement and resume restore convolution at the final transp
         restored.push(targetFrame);
         playingDuringRestore.push([bridges[0]?.latest.running??false,bridges.at(-1)?.latest.running??false]);
         await new Promise(resolve=>setTimeout(resolve,20));
-        return targetFrame===0?null:{startFrame:targetFrame,sampleRate:ctx.sampleRate,channels:[Float32Array.of(.1)]};
+        return targetFrame===0?null:{startFrame:targetFrame,sampleRate:ctx.sampleRate,
+          channels:[new Float32Array(ctx.sampleRate).fill(.1)]};
       };
       const player=createPreviewPlayer(ctx,{createBridge:bridgeFactory,restoreHistory:restore});
       const signal={source,sourceFrames:source.sourceFrames,sampleRate:source.sampleRate,mode:"normal",
@@ -59,7 +66,7 @@ test("progressive replacement and resume restore convolution at the final transp
       await player.pause();const pauseFrame=player.state.position;
       const readsBeforeResume=restored.length;
       await player.play();
-      const result={restored,seekTargets,playingDuringRestore,replacementFrame,pauseFrame,readsBeforeResume,
+      const result={restored,seekTargets,playingDuringRestore,historyStarts,replacementFrame,pauseFrame,readsBeforeResume,
         readsAfterResume:restored.length,bridgesBeforePause:beforePause,bridgesAfterResume:bridges.length,
         resumedFrame:player.state.position};
       player.dispose();await ctx.close();return result;
@@ -68,6 +75,8 @@ test("progressive replacement and resume restore convolution at the final transp
     assert.ok(result.seekTargets.length>=1,JSON.stringify(result));
     assert.equal(result.restored[1],result.seekTargets.at(-1),"replacement history must follow the aligned handoff frame");
     assert.deepEqual(result.playingDuringRestore[1],[true,true],"old and replacement routes must stay running while history is prepared");
+    assert.ok(result.historyStarts.length>=1&&result.historyStarts[0][1]>0&&result.historyStarts[0][1]<1,
+      "history offset must be elapsed seconds inside the prepared wet tail: "+JSON.stringify(result.historyStarts));
     assert.equal(result.bridgesAfterResume,result.bridgesBeforePause+1,"resume must rebuild the live convolution route");
     assert.equal(result.restored.at(-1),result.pauseFrame,"resume history must start at the accepted pause frame");
     assert.ok(result.readsAfterResume>result.readsBeforeResume,JSON.stringify(result));

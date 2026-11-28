@@ -127,7 +127,7 @@ export function createPreviewPlayer(ctx,{onState=()=>{},createBridge=createSourc
               liveNext?.sourceFrame??alignedStart;
             const advancedFrames=Math.max(0,liveNextFrame-alignedStart);
             nextHistory.offset=Math.min(nextHistory.buffer.duration,
-              advancedFrames*ctx.sampleRate/signal.sampleRate);
+              advancedFrames/signal.sampleRate);
           }
           startHistory(nextHistory,nextRoute,ctx.currentTime);
           const previous={bridge:current,node:route,graph:currentGraph,history:currentHistory};

@@ -334,6 +334,8 @@ async function applyPreparation(job,next){
     }
     await audio();
     if(job.revision!==preparationRevision)return;
+    if(next.progressive&&next.processingRate!==ctx.sampleRate)
+      next=next.withProcessingRate(ctx.sampleRate);
     const resume=wasRunning&&stopRevision===stopToken;
     let nextMode=mode,fallbackReason="";
     if(next.progressive&&!['dry','normal','ir-window'].includes(nextMode)){

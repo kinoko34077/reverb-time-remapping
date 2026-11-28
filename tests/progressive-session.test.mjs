@@ -38,4 +38,8 @@ test("progressive preview gain bounds both Normal and compensated IR Window conv
   assert.ok(session.gain.applied<.25,JSON.stringify(session.gain));
   assert.equal(session.select("normal").ir.channels[0],samples);
   assert.equal(session.select("ir-window").ir.channels[0].length,10_000);
+  const resampled=session.withProcessingRate(96_000);
+  assert.equal(resampled.processingRate,96_000);
+  assert.ok(resampled.gain.peak>=160,JSON.stringify(resampled.gain));
+  assert.ok(resampled.gain.applied*resampled.gain.peak<=resampled.gain.ceiling,JSON.stringify(resampled.gain));
 });

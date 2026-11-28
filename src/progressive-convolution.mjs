@@ -11,9 +11,12 @@ export async function matchKernelSampleRate(ctx,kernel,{Context=globalThis.Offli
   ir.channels.forEach((channel,index)=>input.copyToChannel(channel,index));
   const source=offline.createBufferSource();source.buffer=input;source.connect(offline.destination);source.start();
   const rendered=await offline.startRendering();
+  // An IR is a sampled convolution kernel, not an audio playback source.
+  // Preserve its continuous-time area when the processing clock changes.
+  const amplitudeScale=ctx.sampleRate/ir.sampleRate;
   return {origin:0,sampleRate:ctx.sampleRate,
     channels:Array.from({length:ir.channels.length},(_,index)=>
-      Float32Array.from(rendered.getChannelData(index)))};
+      Float32Array.from(rendered.getChannelData(index),sample=>sample*amplitudeScale))};
 }
 
 export async function renderConvolutionHistory(ctx,source,kernel,targetFrame,{predelaySeconds=0,

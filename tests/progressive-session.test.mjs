@@ -68,6 +68,37 @@ test("progressive Reverse cache is disposed when its session is replaced",async(
   replacement.dispose();
 });
 
+test("progressive Reverse timeline retains the full Dry source under long predelay",async()=>{
+  const input=Float32Array.from({length:16},(_,i)=>(i+1)/32);
+  const source={sourceFrames:input.length,channelCount:1,sampleRate:48_000,maxReadFrames:4,
+    async read(startFrame,frameCount){return {startFrame,channels:[input.slice(startFrame,startFrame+frameCount)]};}};
+  const ir={origin:0,sampleRate:48_000,channels:[Float32Array.from([.2,-.4,.8,.1])]};
+  const session=createProgressiveSession(source,ir,{predelay:8/48_000,
+    reverseReaderOptions:{windowFrames:4,maxReadFrames:4,renderWindow:async request=>[new Float32Array(request.frameCount)]}});
+  const output=session.outputFor("reverse");
+  assert.equal(output.timeline.start,0);
+  assert.equal(output.timeline.end,input.length+8);
+  const signal=await session.select("reverse",0,"dry");
+  const dry=[];
+  for(let start=0;start<input.length;start+=4)
+    dry.push(...(await signal.source.read(start,Math.min(4,input.length-start),{priority:"playback"})).channels[0]);
+  assert.deepEqual(Float32Array.from(dry),input);
+  session.dispose();
+
+  const negative=createProgressiveSession(source,ir,{predelay:-8/48_000,
+    reverseReaderOptions:{windowFrames:4,maxReadFrames:4,renderWindow:async request=>[new Float32Array(request.frameCount)]}});
+  const negativeOutput=negative.outputFor("reverse"),negativeStart=-negativeOutput.timeline.start;
+  assert.equal(negativeOutput.timeline.start,-11);
+  assert.equal(negativeOutput.timeline.end,input.length);
+  const negativeSignal=await negative.select("reverse",0,"dry");
+  const negativeDry=[];
+  for(let offset=0;offset<input.length;offset+=4)
+    negativeDry.push(...(await negativeSignal.source.read(negativeStart+offset,Math.min(4,input.length-offset),
+      {priority:"playback"})).channels[0]);
+  assert.deepEqual(Float32Array.from(negativeDry),input);
+  negative.dispose();
+});
+
 test("progressive IR Window slices the kernel without shortening the source timeline",async()=>{
   const source={sourceFrames:500_000,channelCount:2,sampleRate:48_000,
     async read(){throw Error("IR selection must not read the full source");}};

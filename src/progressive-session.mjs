@@ -42,7 +42,8 @@ export function createProgressiveSession(source,ir,{predelay=0,
   const interval={start:0,end:length};
   const reverseDelayFrames=Math.round(predelay*sampleRate);
   const reverseIRFrames=Math.max(1,Math.round(kernel.channels[0].length*sampleRate/kernel.sampleRate));
-  const reverseInterval={start:reverseDelayFrames-(reverseIRFrames-1),end:length+reverseDelayFrames};
+  const reverseInterval={start:Math.min(0,reverseDelayFrames-(reverseIRFrames-1)),
+    end:Math.max(length,length+reverseDelayFrames)};
   const reverseTimeline=createComparisonTimeline({interval:reverseInterval,sampleRate});
   const outputReaders=new Map();
   function outputFor(mode,{sourceRevision=0,irRevision=0,mixRevision=0}={}){

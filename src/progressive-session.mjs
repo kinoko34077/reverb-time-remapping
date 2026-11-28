@@ -1,8 +1,9 @@
 import {validatePCM} from "./convolution.mjs";
 import {extractIRWindow} from "./ir-window.mjs";
 import {createComparisonTimeline,createModeOutputContract} from "./comparison-timeline.mjs";
+import {createProgressiveReversePCMReader} from "./progressive-reverse-reader.mjs";
 
-const PROGRESSIVE_MODES=new Set(["dry","normal","ir-window"]);
+const PROGRESSIVE_MODES=new Set(["dry","normal","reverse","ir-window"]);
 const PREVIEW_REQUESTED_GAIN=.25;
 const PREVIEW_CEILING=.9;
 
@@ -17,7 +18,8 @@ function peakConvolutionBound(channels){
 }
 
 export function createProgressiveSession(source,ir,{predelay=0,
-  irWindowSettings={start:0,duration:.1,calibration:"natural"},processingRate=ir?.sampleRate}={}){
+  irWindowSettings={start:0,duration:.1,calibration:"natural"},processingRate=ir?.sampleRate,
+  reverseReaderOptions={}}={}){
   if(!source||typeof source.read!=="function"||
      !Number.isSafeInteger(source.sourceFrames)||source.sourceFrames<1||
      ![1,2].includes(source.channelCount)||!Number.isFinite(source.sampleRate)||source.sampleRate<=0)
@@ -38,14 +40,19 @@ export function createProgressiveSession(source,ir,{predelay=0,
     peak,ceiling:PREVIEW_CEILING};
   const length=source.sourceFrames,sampleRate=source.sampleRate;
   const interval={start:0,end:length};
+  const reverseDelayFrames=Math.round(predelay*sampleRate);
+  const reverseIRFrames=Math.max(1,Math.round(kernel.channels[0].length*sampleRate/kernel.sampleRate));
+  const reverseInterval={start:Math.min(0,reverseDelayFrames-(reverseIRFrames-1)),
+    end:Math.max(length,length+reverseDelayFrames)};
+  const reverseTimeline=createComparisonTimeline({interval:reverseInterval,sampleRate});
+  const outputReaders=new Map();
   function outputFor(mode,{sourceRevision=0,irRevision=0,mixRevision=0}={}){
     if(!["dry","normal","reverse","ir-window","wet-buffer"].includes(mode))
       throw new RangeError("方式別出力契約が未定義です");
     const selectedKernel=mode==="ir-window"?window:kernel;
     const selectedIRFrames=Math.max(1,Math.round(selectedKernel.channels[0].length*sampleRate/selectedKernel.sampleRate));
-    const selectedDelay=Math.round(Math.max(0,predelay)*sampleRate);
-    const outputInterval=mode==="reverse"?
-      {start:selectedDelay-(selectedIRFrames-1),end:length+selectedDelay}:
+    const selectedDelay=mode==="reverse"?reverseDelayFrames:Math.round(Math.max(0,predelay)*sampleRate);
+    const outputInterval=mode==="reverse"?reverseInterval:
       mode==="dry"?interval:{start:0,end:length+selectedDelay+selectedIRFrames-1};
     const timeline=createComparisonTimeline({interval:outputInterval,sampleRate});
     return createModeOutputContract({mode,timeline,sourceFrames:length,sourceSampleRate:sampleRate,
@@ -56,15 +63,24 @@ export function createProgressiveSession(source,ir,{predelay=0,
     interval,timeline:createComparisonTimeline({interval,sampleRate}),wetOutputFrames,irFrames:kernel.channels[0].length,irSampleRate:kernel.sampleRate,
     irWindow:window.range,irCalibration:window.calibration,irScale:window.scale,
     gain,outputFor,
-    async withIRWindow(settings){return createProgressiveSession(source,kernel,{predelay,irWindowSettings:settings,processingRate});},
-    withProcessingRate(rate){return createProgressiveSession(source,kernel,{predelay,irWindowSettings,processingRate:rate});},
-    select(mode,mix=.25,solo="mix"){
-      if(!PROGRESSIVE_MODES.has(mode))throw Error("この長尺音源ではDry/Normal以外の比較準備は未対応です");
+    async withIRWindow(settings){return createProgressiveSession(source,kernel,{predelay,irWindowSettings:settings,processingRate,reverseReaderOptions});},
+    withProcessingRate(rate){return createProgressiveSession(source,kernel,{predelay,irWindowSettings,processingRate:rate,reverseReaderOptions});},
+    async select(mode,mix=.25,solo="mix"){
+    if(!PROGRESSIVE_MODES.has(mode)&&mode!=="reverse")throw Error("この長尺音源では選択方式の比較準備は未対応です");
       if(!Number.isFinite(mix)||mix<0||mix>1||!["mix","dry","wet"].includes(solo))
         throw new RangeError("無効な試聴比率");
-      return {source,sourceFrames:length,wetOutputFrames,sampleRate,mode,
+      if(mode==="reverse"){
+        let reader=outputReaders.get(mode);
+        if(!reader){reader=await createProgressiveReversePCMReader(source,kernel,outputFor(mode),
+          {...reverseReaderOptions,processingRate});outputReaders.set(mode,reader);}
+        reader.setMix(mix,solo);
+        return {source:reader,sourceFrames:reverseTimeline.length,wetOutputFrames:reverseTimeline.length,
+          sampleRate,mode,output:outputFor(mode),ir:kernel,mix,solo,predelay};
+      }
+      return {source,sourceFrames:length,wetOutputFrames, sampleRate,mode,
         output:outputFor(mode),
         ir:mode==="ir-window"?window:kernel,mix,solo,predelay};
-    }
+    },
+    dispose(){for(const reader of outputReaders.values())reader.dispose();outputReaders.clear();}
   });
 }

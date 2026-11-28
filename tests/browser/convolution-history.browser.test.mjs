@@ -4,7 +4,7 @@ import {spawn} from "node:child_process";
 import puppeteer from "puppeteer-core";
 import {cleanupTestProcesses} from "../../shared/atf/test-process-cleanup.mjs";
 
-test("progressive normal convolution restores only the selected point's prior IR history",async()=>{
+test("progressive convolution restores the selected history at source rate and resamples its whole tail",async()=>{
   const port=18768;
   const server=spawn(process.env.PYTHON_BIN||"python3",["-m","http.server",String(port),"--bind","127.0.0.1"],{stdio:"ignore"});
   let browser;
@@ -18,7 +18,7 @@ test("progressive normal convolution restores only the selected point's prior IR
       if(!ready)await new Promise(resolve=>setTimeout(resolve,200));
     }
     assert.ok(ready,"test HTTP server unavailable");
-    const tail=await page.evaluate(async()=>{
+    const result=await page.evaluate(async()=>{
       const {renderConvolutionHistory}=await import("/src/progressive-convolution.mjs");
       const input=Float32Array.of(1,.5,-.25,.75,0);
       const source={sourceFrames:input.length,channelCount:1,sampleRate:48000,
@@ -26,11 +26,20 @@ test("progressive normal convolution restores only the selected point's prior IR
       const ir={origin:0,sampleRate:48000,channels:[Float32Array.of(.5,.25,-.1)]};
       const context=new OfflineAudioContext(1,8,48000);
       const result=await renderConvolutionHistory(context,source,ir,3);
-      return {...result,channels:result.channels.map(channel=>Array.from(channel))};
+      const reads=[];
+      const highRate={sourceFrames:12,channelCount:1,sampleRate:96000,maxReadFrames:16,
+        async read(start,count){reads.push({start,count});return {startFrame:start,
+          channels:[Float32Array.from({length:count},(_,i)=>start+i+1)]};}};
+      const highRateContext=new OfflineAudioContext(1,8,48000);
+      const highRateIR={origin:0,sampleRate:48000,channels:[Float32Array.of(.5,.25,-.1)]};
+      await renderConvolutionHistory(highRateContext,highRate,highRateIR,7);
+      return {tail:{...result,channels:result.channels.map(channel=>Array.from(channel))},reads};
     });
+    const tail=result.tail;
     assert.equal(tail.startFrame,3);
     assert.deepEqual(tail.channels.map(channel=>channel.length),[2]);
     assert.ok(Math.abs(tail.channels[0][0]-(-.1125))<1e-5,JSON.stringify(tail));
     assert.ok(Math.abs(tail.channels[0][1]-.025)<1e-5,JSON.stringify(tail));
+    assert.deepEqual(result.reads,[{start:3,count:4}],"the IR tail duration must be converted to source-rate frames");
   }finally{await cleanupTestProcesses(browser,[server]);}
 });

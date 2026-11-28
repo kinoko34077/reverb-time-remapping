@@ -4,7 +4,8 @@ import {createLiveConvolutionGraph} from "./live-convolution.mjs";
 import {matchKernelSampleRate,renderConvolutionHistory} from "./progressive-convolution.mjs";
 
 // Routes are independently attenuated before a shared preview-only ceiling.
-export function createPreviewPlayer(ctx,{onState=()=>{}}={}){
+export function createPreviewPlayer(ctx,{onState=()=>{},createBridge=createSourcePCMBridge,
+  restoreHistory=renderConvolutionHistory}={}){
   let current=null,route=null,currentGraph=null,currentSignal=null,currentGain=1,currentHistory=null;
   let position=0,running=false,revision=0,disposed=false,lastReadyEvent=null;
   const retiring=new Set();
@@ -55,7 +56,7 @@ export function createPreviewPlayer(ctx,{onState=()=>{}}={}){
     const reader=signal?.source&&typeof signal.source.read==="function"?signal.source:null;
     const length=reader?signal.sourceFrames:signal.channels[0].length;
     const initial=Math.min(length,Math.max(0,Math.round(frame)));
-    let next,nextRoute,nextGraph=null,nextHistory=null,readyEvent=null;
+    let next,nextRoute,nextGraph=null,nextKernel=null,nextHistory=null,readyEvent=null;
     const stale=()=>disposed||token!==revision;
     const abandon=()=>{release(next,nextRoute,nextGraph,nextHistory);return false;};
     try{
@@ -73,7 +74,7 @@ export function createPreviewPlayer(ctx,{onState=()=>{}}={}){
       };
       next=scrub?await createScrubPair({ctx,dry:signal,wet:scrub.wet,mode:scrub.mode,mix:scrub.mix,solo:scrub.solo,calibration:scrub.calibration,onEvent,
         positions:{source:{frame:initial,...positions.source},wet:{frame:initial,...positions.wet}}}):
-        await createSourcePCMBridge({ctx,source:reader,sourceChannels:signal.channels,sourceSampleRate:signal.sampleRate,
+        await createBridge({ctx,source:reader,sourceChannels:signal.channels,sourceSampleRate:signal.sampleRate,
           sourceFrames:reader?signal.sourceFrames:undefined,startFrame:initial,processingMode:"raw",onEvent});
       if(stale())return abandon();
       nextRoute=ctx.createGain();nextRoute.gain.value=0;
@@ -83,14 +84,19 @@ export function createPreviewPlayer(ctx,{onState=()=>{}}={}){
         if(signal.predelay<0)throw Error("長尺Normalの負Predelayには先読み経路が必要です");
         nextGraph=createLiveConvolutionGraph(ctx,{sourceChannels:reader.channelCount,ir,
           wet:signal.mix,solo:signal.solo,predelaySeconds:signal.predelay});
+        nextKernel=ir;
         next.connect(nextGraph.input);nextGraph.output.connect(nextRoute);
-        const history=await renderConvolutionHistory(ctx,reader,ir,initial,{predelaySeconds:signal.predelay});
-        if(history){
-          const buffer=ctx.createBuffer(history.channels.length,history.channels[0].length,history.sampleRate);
-          history.channels.forEach((channel,index)=>buffer.copyToChannel(channel,index));
-          nextHistory={buffer,offset:0,startedAt:0,started:false,wetGain:wetAmount(signal.mix,signal.solo),node:null,gainNode:null};
-        }
       }else next.connect(nextRoute);
+      const prepareHistory=async frame=>{
+        if(!reader||!nextGraph)return null;
+        const history=await restoreHistory(ctx,reader,nextKernel,frame,
+          {predelaySeconds:signal.predelay});
+        if(!history)return null;
+        const buffer=ctx.createBuffer(history.channels.length,history.channels[0].length,history.sampleRate);
+        history.channels.forEach((channel,index)=>buffer.copyToChannel(channel,index));
+        return {buffer,offset:0,startedAt:0,started:false,
+          wetGain:wetAmount(signal.mix,signal.solo),node:null,gainNode:null};
+      };
       nextRoute.connect(gain);
       if(crossfade&&resume&&running&&!scrub&&current?.processingMode==="raw"){
         // Align to the last render-thread clock sample, not a UI slider.
@@ -101,6 +107,8 @@ export function createPreviewPlayer(ctx,{onState=()=>{}}={}){
         const target=Math.min(length,Math.max(0,Math.round(estimated)));
         if(target<length){
           await next.seek(target);
+          if(stale())return abandon();
+          nextHistory=await prepareHistory(target);
           if(stale())return abandon();
            readyEvent=null;lastReadyEvent=null;
           await next.play();
@@ -131,6 +139,8 @@ export function createPreviewPlayer(ctx,{onState=()=>{}}={}){
         }else await next.seek(target);
       }
       if(stale())return abandon();
+      nextHistory=await prepareHistory(target);
+      if(stale())return abandon();
       release(current,route,currentGraph,currentHistory);current=next;route=nextRoute;
       currentGraph=nextGraph;currentHistory=nextHistory;currentSignal=signal;currentGain=appliedGain;
       position=target;running=false;route.gain.value=appliedGain;
@@ -152,6 +162,8 @@ export function createPreviewPlayer(ctx,{onState=()=>{}}={}){
   }
   async function play(){
     ensure();if(!current)return false;
+    if(!running&&currentSignal?.source&&["normal","ir-window"].includes(currentSignal.mode))
+      return load(currentSignal,currentGain,{frame:position,resume:true,reset:true});
     const token=revision,target=current;
     lastReadyEvent=null;
     await target.play();
@@ -162,7 +174,10 @@ export function createPreviewPlayer(ctx,{onState=()=>{}}={}){
   }
   async function pause(){
     ensure();if(!current)return;
-    const token=revision,target=current;stopHistory(currentHistory);
+    const token=revision,target=current;
+    const rebuildOnResume=currentSignal?.source&&["normal","ir-window"].includes(currentSignal.mode);
+    stopHistory(currentHistory);
+    if(rebuildOnResume)route?.gain.setTargetAtTime(0,ctx.currentTime,.003);
     const receipt=await target.pause();
     if(disposed||current!==target||token!==revision)return;
     position=receipt.sourceFrame;running=false;report({phase:"accepted"});

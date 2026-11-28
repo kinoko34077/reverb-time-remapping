@@ -4,7 +4,7 @@ import {spawn} from "node:child_process";
 import puppeteer from "puppeteer-core";
 import {cleanupTestProcesses} from "../../shared/atf/test-process-cleanup.mjs";
 
-test("three-minute stereo MP3 remains seekable and plays with Dry and Normal in the app",async()=>{
+test("three-minute stereo MP3 remains seekable, restores Normal from unsupported mode, and plays",async()=>{
   const port=18767;
   const server=spawn(process.env.PYTHON_BIN||"python3",["-m","http.server",String(port),"--bind","127.0.0.1"],{stdio:"ignore"});
   let browser;
@@ -19,6 +19,10 @@ test("three-minute stereo MP3 remains seekable and plays with Dry and Normal in 
       if(!ready)await new Promise(resolve=>setTimeout(resolve,200));
     }
     assert.ok(ready,"test HTTP server unavailable");
+    await page.click("#prepare");
+    await page.waitForFunction(()=>document.querySelector("#status").textContent.startsWith("準備済み"),{timeout:30000});
+    await page.click('[data-mode="reverse"]');
+    await page.waitForFunction(()=>document.querySelector('[data-mode="reverse"]').getAttribute("aria-pressed")==="true");
     await page.evaluate(async()=>{
       const response=await fetch("/tests/fixtures/three-minute-stereo-44k.mp3");
       if(!response.ok)throw Error("synthetic MP3 fixture unavailable");
@@ -39,6 +43,7 @@ test("three-minute stereo MP3 remains seekable and plays with Dry and Normal in 
       waveMax:Number(document.querySelector("#wave-detail").getAttribute("aria-valuemax")),
       normalDisabled:document.querySelector('[data-mode="normal"]').disabled,
       irWindowDisabled:document.querySelector('[data-mode="ir-window"]').disabled,
+      normalSelected:document.querySelector('[data-mode="normal"]').getAttribute("aria-pressed")==="true",
       duration:document.querySelector("#source-wave-note").textContent,
       status:document.querySelector("#status").textContent
     }));
@@ -46,6 +51,8 @@ test("three-minute stereo MP3 remains seekable and plays with Dry and Normal in 
     assert.equal(loaded.waveMax,loaded.seekMax-1,JSON.stringify(loaded));
     assert.equal(loaded.normalDisabled,false,JSON.stringify(loaded));
     assert.equal(loaded.irWindowDisabled,false,JSON.stringify(loaded));
+    assert.equal(loaded.normalSelected,true,JSON.stringify(loaded));
+    assert.ok(loaded.status.includes("reverseが未対応のためNormalへ切替"),JSON.stringify(loaded));
 
     await page.click('[data-mode="ir-window"]');
     await page.waitForFunction(()=>document.querySelector('[data-mode="ir-window"]').getAttribute("aria-pressed")==="true");

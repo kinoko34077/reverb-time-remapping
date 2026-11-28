@@ -29,7 +29,10 @@ export async function renderConvolutionHistory(ctx,source,kernel,targetFrame,{pr
   const delayFrames=Math.round(predelaySeconds*ctx.sampleRate);
   const tailFrames=ir.channels[0].length-1+delayFrames;
   if(targetFrame===0||tailFrames===0)return null;
-  const historyFrames=Math.min(targetFrame,ir.channels[0].length-1+Math.ceil(delayFrames*source.sampleRate/ctx.sampleRate));
+  // The entire IR tail plus predelay is measured on the processing clock.
+  // Convert that duration to source frames, rather than converting only the
+  // predelay; the source can run at a different rate from the AudioContext.
+  const historyFrames=Math.min(targetFrame,Math.ceil(tailFrames*source.sampleRate/ctx.sampleRate));
   if(historyFrames<1)return null;
   const startFrame=targetFrame-historyFrames;
   const history=Array.from({length:source.channelCount},()=>new Float32Array(historyFrames));

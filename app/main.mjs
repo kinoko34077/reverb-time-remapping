@@ -317,11 +317,21 @@ async function applyPreparation(job,next){
     await audio();
     if(job.revision!==preparationRevision)return;
     const resume=wasRunning&&stopRevision===stopToken;
-    let accepted=await loadMode(next,mode,{frame,resume,reset:true});
+    let nextMode=mode,fallbackReason="";
+    if(next.progressive&&!['dry','normal','ir-window'].includes(nextMode)){
+      nextMode=job.predelay<0?"dry":"normal";
+      fallbackReason=`長尺音源では${mode}が未対応のため${nextMode==="dry"?"Dry":"Normal"}へ切替`;
+    }
+    if(next.progressive&&job.predelay<0&&["normal","ir-window"].includes(nextMode)){
+      nextMode="dry";
+      fallbackReason="長尺音源の負Predelayは先読み処理が未実装のためDryへ切替";
+    }
+    let accepted=await loadMode(next,nextMode,{frame,resume,reset:true});
     if(!accepted&&stopRevision!==stopToken)
-      accepted=await loadMode(next,mode,{frame:0,resume:false,reset:true});
+      accepted=await loadMode(next,nextMode,{frame:0,resume:false,reset:true});
     if(!accepted)return;
     if(stopRevision!==stopToken)await player.stop();
+    mode=appliedMode=nextMode;
     wetApplyRequested=false;clearTimeout(wetApplyTimer);wetApplyTimer=null;
     const priorProgressive=session?.progressive?session.source:null;
     session=next;appliedSourceKey=job.sourceKey;appliedSourceType=job.sourceType;savedAxes={};pendingWave=null;
@@ -335,7 +345,8 @@ async function applyPreparation(job,next){
     }
     showAxes(player.state.axes);showCalibration(player.state.calibration);
     showWindow(next);if(!next.progressive)showSpectral(next,{reset:true});
-    message(next.progressive?"準備済み: 長尺逐次再生 / Dry・Normal・IR Window（他方式は未対応）":"準備済み: "+mode);status.dataset.prepared="true";
+    message(fallbackReason?`準備済み: ${fallbackReason}。長尺逐次再生 / Dry・Normal・IR Window（他方式は未対応）`:
+      next.progressive?"準備済み: 長尺逐次再生 / Dry・Normal・IR Window（他方式は未対応）":"準備済み: "+mode);status.dataset.prepared="true";
   });
 }
 $("prepare").onclick=requestPreparation;

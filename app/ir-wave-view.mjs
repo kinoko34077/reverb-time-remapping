@@ -17,7 +17,10 @@ export function createIRWaveView({getWindow,onStart,onEdge,canEdit}){
     onPosition:seconds=>{if(!closed&&ir&&canEdit())onStart(seconds);},
     onStart:()=>{},onScrubMotion:()=>{},onScrubState:()=>{},
     onAB:(edge,frame)=>{
-      if(!edge&&ir&&!wrap.dataset.interaction)viewportFrame=getWindow().start;
+      if(!edge&&ir&&!wrap.dataset.interaction){
+        const range=getWindow();
+        viewportFrame=range.start+(range.end-range.start)/2;
+      }
       if(edge&&ir&&canEdit())onEdge(edge,frame);
       const range=ir?getWindow():{start:0,end:0};
       return {a:range.start,b:range.end,enabled:!!ir};
@@ -29,7 +32,8 @@ export function createIRWaveView({getWindow,onStart,onEdge,canEdit}){
     setIR(value){
       if(closed)return;
       ir=value&&Array.isArray(value.channels)&&value.channels.length?value:null;
-      viewportFrame=ir?getWindow().start:null;
+      if(ir){const range=getWindow();viewportFrame=range.start+(range.end-range.start)/2;}
+      else viewportFrame=null;
       editor.setSource(ir?.channels??null,ir?.sampleRate??48000);
       editor.refresh(true);
     },

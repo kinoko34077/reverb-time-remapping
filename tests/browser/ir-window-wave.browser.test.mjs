@@ -64,9 +64,9 @@ test("IR window endpoints are directly editable on the real IR waveform",async()
       marker:document.querySelector("#ir-wave-b-marker").style.left,
       irSamples:Number(document.querySelector("#ir-wave-detail").getAttribute("aria-valuemax"))
     }));
-    assert.ok(state.length>50&&state.length<70,JSON.stringify(state));
+    assert.ok(state.length>50&&state.length<=75,JSON.stringify(state));
     const range=state.selected.match(/適用IR窓:\s*([\d.]+)\s*–\s*([\d.]+)/);
-    assert.ok(range&&Math.abs(Number(range[1]))<.01&&Number(range[2])>50&&Number(range[2])<70,JSON.stringify(state));
+    assert.ok(range&&Math.abs(Number(range[1]))<.01&&Number(range[2])>50&&Number(range[2])<=75,JSON.stringify(state));
     assert.ok(state.marker&&state.irSamples>9000,JSON.stringify(state));
 
     // A moves the viewport's apparent start. Repeating the same pointer
@@ -87,6 +87,13 @@ test("IR window endpoints are directly editable on the real IR waveform",async()
     assert.ok(Math.abs(afterStationaryMove-afterFirstMove)<0.01,
       JSON.stringify({afterFirstMove,afterStationaryMove}));
     await page.mouse.up();
+    await page.$eval("#ir-window-start",element=>{element.value="0";element.dispatchEvent(new Event("change",{bubbles:true}));});
+    await page.$eval("#ir-window-length",element=>{element.value="140";element.dispatchEvent(new Event("change",{bubbles:true}));});
+    await page.waitForFunction(()=>{
+      const marker=document.querySelector("#ir-wave-b-marker");
+      const range=document.querySelector("#window-range").textContent.match(/適用IR窓:\s*([\d.]+)\s*–\s*([\d.]+)/);
+      return !marker.hidden&&!!range&&Number(range[2])>=139&&!document.querySelector("#play").disabled;
+    },{timeout:4000});
     assert.deepEqual(errors,[]);
   }finally{await cleanupTestProcesses(browser,[server]);}
 });

@@ -7,6 +7,7 @@ import {secondsToFrames} from "../src/convolution.mjs";
 import {createWetMixBinding,mountWetMixField} from "../src/wet-mix.mjs";
 import {createSourceWaveView} from "./source-wave-view.mjs";
 import {createIRWaveView} from "./ir-wave-view.mjs";
+import {createWetWaveView} from "./wet-wave-view.mjs";
 import {openProgressiveMaterial,estimatePreparedComparisonBytes,resamplePCM} from "../src/progressive-material.mjs";
 import {createProgressiveSession} from "../src/progressive-session.mjs";
 const $=id=>document.getElementById(id);
@@ -19,7 +20,7 @@ let appliedSourceKey=null,appliedSourceType="impulse",stopRevision=0,wetApplyTim
 let explicitStopIntent=false,stopping=false;
 const status=$("status"),seek=$("seek");
 let savedAxes={};const dragging=new Set();
-let pendingWave=null,waveSeekWork=false;
+let pendingWave=null,waveSeekWork=false,pendingWetWave=null,wetWaveSeekWork=false;
 const wave=createSourceWaveView({
   getFrame:()=>isScrubMode(appliedMode)?player?.state.axes?.source?.frame??0:player?.state.position??0,
   getRange:()=>isScrubMode(appliedMode)?player?.state.axes?.source:null,
@@ -28,6 +29,10 @@ const wave=createSourceWaveView({
     if(!session||!isScrubMode(appliedMode))return;
     pendingWave={session,mode:appliedMode,edge,frame};pumpWave();
   }
+});
+const wetWave=createWetWaveView({
+  getFrame:()=>player?.state.axes?.wet?.frame??0,
+  onSeek:frame=>{if(!session)return;pendingWetWave={session,mode:appliedMode,frame};pumpWetWave();}
 });
 const irWave=createIRWaveView({
   getWindow:irWaveRange,
@@ -82,6 +87,17 @@ function pumpWave(){
     else await player.seek(job.frame);
     show(player.state.position);
   }).finally(()=>{waveSeekWork=false;wave.refresh(true);pumpWave();});
+}
+function pumpWetWave(){
+  if(busy||wetWaveSeekWork||!pendingWetWave)return;
+  const job=pendingWetWave;pendingWetWave=null;
+  if(job.session!==session||job.mode!==appliedMode){wetWave.refresh(true);return;}
+  wetWaveSeekWork=true;
+  void run(async()=>{
+    if(job.session!==session||job.mode!==appliedMode)return;
+    await player.configureAxis("wet",{frame:job.frame});
+    showAxes(player.state.axes);show(player.state.position);
+  }).finally(()=>{wetWaveSeekWork=false;wetWave.commit();pumpWetWave();});
 }
 let windowRevision=0,windowWork=null,queuedWindow=null,windowApplying=false;
 const spectralWorker=createIRSpectralWorker();
@@ -250,12 +266,12 @@ function show(frame){
 async function run(fn){
   if(busy)return;busy=true;controls();
   try{await fn();}catch(e){message("処理できません: "+e.message);}
-  finally{busy=false;controls();pumpWindow();pumpWave();pumpPreparation();flushWetApply();}
+  finally{busy=false;controls();pumpWindow();pumpWave();pumpWetWave();pumpPreparation();flushWetApply();}
 }
 async function audio(){
   if(!ctx){ctx=new AudioContext();player=createPreviewPlayer(ctx,{onState:s=>{
     if(s.error){message("再生エラー: "+s.error);return;}
-    show(s.position);showAxes(s.axes);showCalibration(s.calibration);wave.refresh();
+    show(s.position);showAxes(s.axes);showCalibration(s.calibration);wave.refresh();wetWave.refresh();
     if(s.event?.type==="render-applied"&&s.event.missingFramesInBlock===0)
       status.dataset.renderApplied=String(s.event.requestId);
     if(s.event?.type==="progress")status.dataset.renderedFrames=String(s.event.renderedFrames);
@@ -300,7 +316,8 @@ async function choose(next){
   if((next!==mode||!isScrubMode(next)||!player.setMix(binding.value,$("solo").value))&&
      !await loadMode(session,next))return;
   if(isScrubMode(next)){showAxes(player.state.axes);showCalibration(player.state.calibration);}
-  mode=appliedMode=next;pendingWave=null;wave.refresh(true);
+  mode=appliedMode=next;pendingWave=null;pendingWetWave=null;wave.refresh(true);
+  wetWave.setSignal(isScrubMode(next)?player.state.wetSignal:null);
   message("適用: "+mode+" / Wet "+(binding.value*100).toFixed(3)+"%");
   show(player.state.position);
 }
@@ -427,6 +444,7 @@ async function applyPreparation(job,next){
       $(name+"-speed").value="1";$(name+"-repeat").checked=false;$(name+"-loop-style").value="repeat";
     }
     showAxes(player.state.axes);showCalibration(player.state.calibration);
+    wetWave.setSignal(isScrubMode(nextMode)?player.state.wetSignal:null);
     showWindow(next);if(!next.progressive)showSpectral(next,{reset:true});
     message(fallbackReason?`準備済み: ${fallbackReason}。長尺逐次再生 / Dry・Normal・IR Window（他方式は未対応）`:
       next.progressive?"準備済み: 長尺逐次再生 / Dry・Normal・IR Window・Wet Buffer":"準備済み: "+mode);status.dataset.prepared="true";
@@ -519,5 +537,5 @@ for(const id of spectralFields.filter(id=>id!=="ir-spectral-scrub"))$(id).onchan
   if(id==="ir-spectral-start")$("ir-spectral-scrub").value=$(id).value;
   requestWindow("ir-spectral");
 };
-window.addEventListener("pagehide",()=>{cancelWindowRequests();spectralWorker.dispose();wave.dispose();irWave.dispose();player?.dispose();void ctx?.close();},{once:true});
+window.addEventListener("pagehide",()=>{cancelWindowRequests();spectralWorker.dispose();wave.dispose();irWave.dispose();wetWave.dispose();player?.dispose();void ctx?.close();},{once:true});
 controls();

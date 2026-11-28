@@ -170,6 +170,12 @@ test("three-minute stereo MP3 remains seekable, restores Normal from unsupported
       element.dispatchEvent(new Event("change"));},tailStart);
     await page.waitForFunction(frame=>Number(document.querySelector("#wet-seek").value)===frame,
       {timeout:30000},tailStart);
+    for(let i=0;i<4;i++)await page.click("#wet-wave-zoom-out");
+    await page.waitForFunction(()=>Number(document.querySelector("#wet-wave-detail").dataset.spanFrames)>2_097_152,
+      {timeout:30000});
+    await page.waitForFunction(()=>Number(document.querySelector("#wet-wave-detail").dataset.overviewBinsReady)===512,
+      {timeout:120000});
+    assert.match(await page.$eval("#wet-wave-note",element=>element.textContent),/全体波形 512\/512/);
     await page.click("#play");
     await page.waitForFunction(()=>document.querySelector("#status").textContent==="再生要求を受理"||
       document.querySelector("#status").textContent.startsWith("再生エラー"),{timeout:30000});

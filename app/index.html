@@ -54,6 +54,12 @@
 </div><p class="note">0×: SourceとWet Bufferは局所50msループ、Wet Spectralは位相継続再合成。反復・往復区間は共通時間座標の秒で指定（終了点を含まない）。往復のPVは折返した波形文脈を解析します。固定時の局所波形は別。素材の無音部は無音。Wet補正は元のWetの局所50ms RMSを全体RMSへ近づける試聴用ゲインで、IR補正・Dry・Wet再合成自体は変更しません。Wetは準備済み通常残響の独立参照であり、現在のSource操作で再畳み込みしません。</p>
 </div><div id="ir-live" hidden>
 <label>IR窓の開始位置 (ms) <output id="window-request">—</output><input id="ir-window-scrub" type="range" min="0" max="1" step="any" value="0" disabled></label>
+<div class="source-wave ir-wave" id="ir-wave-panel" aria-label="IR波形と時間窓">
+<div class="wave-editor-toolbar"><strong>IR波形 / 窓の端</strong><output id="ir-wave-selection">未準備</output><div class="wave-zoom-actions"><button id="ir-wave-zoom-out" type="button" aria-label="IR波形を縮小">−</button><output id="ir-wave-zoom-label" aria-live="off">—</output><button id="ir-wave-zoom-in" type="button" aria-label="IR波形を拡大">＋</button></div></div>
+<div class="wave-detail-wrap" id="ir-wave-detail-wrap"><canvas id="ir-wave-detail" role="slider" tabindex="0" aria-label="IR時間窓の位置。波形をタップ・ドラッグし、A/B端を調整" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"></canvas>
+<div class="wave-detail-ruler" aria-hidden="true" hidden><span data-ruler-tick="0"></span><span data-ruler-tick="1"></span><span data-ruler-tick="2"></span><span data-ruler-tick="3"></span><span data-ruler-tick="4"></span></div>
+<span id="ir-wave-a-marker" class="wave-marker" hidden aria-hidden="true">A</span><span id="ir-wave-b-marker" class="wave-marker wave-marker-b" hidden aria-hidden="true">B</span><span id="ir-wave-overview-selection" hidden></span></div>
+<p class="note">実IR波形のA/B端で窓の開始と長さを調整します。タップ・ドラッグ・矢印キー・ズームはIR素材内の時間です。</p></div>
 <p class="note">再生中も窓を更新できます。新しい有限キャッシュの準備まで前の音を維持します。</p>
 </div><div id="ir-spectral-live" hidden>
 <h2>IRスペクトル再合成</h2>

@@ -1,0 +1,78 @@
+import {createPlayerWaveEditor} from "../shared/atf/player-wave-editor.mjs";
+
+// The editor owns waveform gestures and painting. Numeric window fields remain
+// canonical so direct manipulation and precise entry stay synchronized.
+export function createIRWaveView({getWindow,onStart,onEdge,canEdit}){
+  const $=id=>document.getElementById(id);
+  const canvas=$("ir-wave-detail"),wrap=$("ir-wave-detail-wrap");
+  let ir=null,closed=false,viewportFrame=null,anchorRefreshPending=false,
+    lastRangeKey=null,visualRelocation=false;
+  canvas.addEventListener("wheel",event=>{
+    if(!event.ctrlKey&&!event.metaKey)return;
+    visualRelocation=true;
+  },true);
+  function reanchor(range){
+    const next=range.start+(range.end-range.start)/2;
+    const key=range.start+":"+range.end;
+    if(lastRangeKey===key)return;
+    lastRangeKey=key;
+    viewportFrame=next;
+    if(anchorRefreshPending)return;
+    anchorRefreshPending=true;
+    queueMicrotask(()=>{
+      anchorRefreshPending=false;
+      if(!closed)editor.refresh(true);
+    });
+  }
+  const editor=createPlayerWaveEditor({canvas,wrap,overviewSelection:$("ir-wave-overview-selection"),
+    markerA:$("ir-wave-a-marker"),markerB:$("ir-wave-b-marker"),
+    zoomIn:$("ir-wave-zoom-in"),zoomOut:$("ir-wave-zoom-out"),zoomLabel:$("ir-wave-zoom-label"),
+    rulerTicks:[...wrap.querySelectorAll("[data-ruler-tick]")],
+    // The shared editor computes handle positions relative to its playhead
+    // anchor. Keep that anchor fixed during an endpoint gesture so moving A
+    // does not shift the coordinate system under the pointer.
+    getPosition:()=>ir?(viewportFrame??getWindow().start)/ir.sampleRate:0,
+    onPosition:seconds=>{
+      if(closed||!ir)return;
+      const requested=Math.round(seconds*ir.sampleRate);
+      if(visualRelocation){viewportFrame=requested;return;}
+      if(!canEdit())return;
+      const range=getWindow();
+      const midpoint=range.start+(range.end-range.start)/2;
+      const delta=requested-(viewportFrame??midpoint);
+      viewportFrame=requested;
+      onStart(delta/ir.sampleRate);
+    },
+    onStart:()=>{},onScrubMotion:()=>{},onScrubState:()=>{},
+    onAB:(edge,frame)=>{
+      if(!edge&&ir&&!wrap.dataset.interaction){
+        reanchor(getWindow());
+      }
+      if(edge&&ir&&canEdit())onEdge(edge,frame);
+      const range=ir?getWindow():{start:0,end:0};
+      return {a:range.start,b:range.end,enabled:!!ir};
+    }
+  });
+  // The shared editor handles the bubbling wheel event after its capture
+  // phase. Keep the visual-only flag alive until that handler has returned.
+  canvas.addEventListener("wheel",event=>{
+    if(event.ctrlKey||event.metaKey)visualRelocation=false;
+  });
+  const resize=new ResizeObserver(()=>{if(!closed)editor.refresh(true);});
+  resize.observe(wrap);
+  return {
+    setIR(value){
+      if(closed)return;
+      ir=value&&Array.isArray(value.channels)&&value.channels.length?value:null;
+      if(ir){
+        const range=getWindow();
+        viewportFrame=range.start+(range.end-range.start)/2;
+        lastRangeKey=range.start+":"+range.end;
+      }else{viewportFrame=null;lastRangeKey=null;}
+      editor.setSource(ir?.channels??null,ir?.sampleRate??48000);
+      editor.refresh(true);
+    },
+    refresh(force=false){if(!closed&&ir)editor.refresh(force);},
+    dispose(){closed=true;resize.disconnect();editor.setSource(null,ir?.sampleRate??48000);ir=null;viewportFrame=null;}
+  };
+}
